@@ -1,0 +1,25 @@
+[build]
+  command = "npm run build"
+  publish = "dist/client"
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[functions]
+  node_bundler = "esbuild"
+  # Vinext's server imports route and SSR chunks at runtime. Keep the complete
+  # generated server tree with the function on every deploy.
+  included_files = ["dist/server/**"]
+
+[[edge_functions]]
+  function = "password-wall"
+  path = "/*"
+
+# Existing files in dist/client (including /_next assets and favicon.svg) are
+# served directly by Netlify's CDN. All other requests render through Vinext.
+[[redirects]]
+  from = "/*"
+  to = "/.netlify/functions/vinext"
+  status = 200
+  force = false

@@ -14,6 +14,21 @@ npx tsc --noEmit
 npm run build
 ```
 
+## Deployment
+
+JazzTow is deployed on Netlify. The build publishes Vinext client assets from `dist/client`; requests that do not match a static asset are rendered by the generated Vinext server through the `vinext` Netlify Function. Keep `netlify.toml` and `netlify/functions/vinext.mjs` intact when changing the build or routing setup.
+
+Netlify builds require Node 22. The production site must be published by a Netlify user or token with production-deploy permission; deploy previews can be used to verify changes before publishing.
+
+### Access control
+
+Every request, including static assets, is protected by the Netlify Edge Function in `netlify/edge-functions/password-wall.ts`. In Netlify’s environment-variable settings, create these variables with the **Functions** scope for production and deploy previews:
+
+- `JAZZTOW_PASSWORD`: `Jazz123`
+- `JAZZTOW_SESSION_SECRET`: a unique, high-entropy secret (for example, output from `openssl rand -base64 32`)
+
+The site fails closed with an unavailable response until both variables are present. Sessions are signed, HTTP-only, secure cookies that expire after 12 hours.
+
 ## Confirmed operating rules
 
 - Use the operating date and station from the CSV report footer. An upload-date override is available when the footer is absent.
