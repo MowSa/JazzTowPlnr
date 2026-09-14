@@ -107,3 +107,17 @@
  .dark .gate,.dark .comparison-gate[data-slot=badge],.dark .airport-counts [data-slot=badge]{background:#2b282b;color:var(--foreground);border-color:var(--border)}.dark .fin,.dark .pickup-edit,.dark .source-body strong,.dark .shutdown-empty h3{color:var(--foreground)}
  .dark [data-slot=sheet-content],.dark [data-slot=select-content],.dark [data-slot=popover-content]{background:var(--card);color:var(--foreground);border-color:var(--border)}
 }
+
+/* Air Canada-inspired brand accents and complete empty-state theming. */
+@media screen{
+ .console-nav{background:#19191c;border-right-color:#303034}
+ .console-nav [data-slot=sidebar-menu-button]:hover{background:#29272a}
+ .console-nav [data-slot=sidebar-menu-button][data-active=true]{background:#402427;box-shadow:inset 3px 0 var(--primary)}
+ .stat-blue .stat-icon,.console-main .gate.bse,.console-main .reason-badge.blue,.console-main .execution-progress{color:#b51c22;background:#fbecee;border-color:#efc5c8}
+ .status-progress>svg,.fin-link[data-slot=button],.aircraft-leg [data-slot=button]{color:#c71f26}
+ .review-progress [data-slot=progress-indicator]{background:var(--primary)}
+ .dark .session-empty[data-slot=card]{background:var(--card);border-color:#5d5559;color:var(--foreground)}
+ .dark .session-empty h2{color:var(--foreground)}
+ .dark .session-empty p,.dark .session-empty small{color:var(--muted-foreground)}
+ .dark .session-empty>*,.dark .session-empty [data-slot=card-content]{opacity:1}
+}
