@@ -1,6 +1,6 @@
 # JazzTow
 
-Daily aircraft tow planner for turn-view CSV exports. Includes the supplied YUL September 5, 2026 schedule as an explicitly labeled sample. Uploads are parsed in the browser and are not sent to an application backend. Working edits are session-only; download the CSV or print the sheet to preserve results.
+Daily aircraft tow planner for turn-view CSV exports. Every new page session starts empty, with no uploaded file, report date, tow moves or shutdown rows. The historical CSV is kept only as a test fixture and is not imported by the app. Uploads are parsed in the browser and are not sent to an application backend. Working edits are session-only; download the CSV or print the sheet to preserve results.
 
 ## Run
 
@@ -55,3 +55,25 @@ Users can add a tow move manually from the Tow moves toolbar. FIN, tow-from loca
 Node tests cover the supplied data (53 active turns, 6 cancellations, 3 gate changes, 6 BSE moves, 1 long stay and 43 no-tow turns after completed departures are excluded), quoted CSVs, bad input, missing data, day/month/year boundaries, timing validation, paired holding moves and CSV escaping. Type checking and production compilation are also performed. Browser interaction / visual QA was not requested and has not been performed.
 
 Optional WebMCP tools `analyze_flight_csv` and `read_tow_plan` are feature-detected on document.modelContext and share the visible app state. A supported WebMCP validation context was not available; their browser registration and execution remain unverified.
+
+## Same-area routing review
+
+US gates are 56–58 and 73–89; domestic gates are 1–49. Active same-day changes between different gates in the same area require a routing decision in Review. Confirm a direct tow, or specify a holding stand to create arrival-to-holding and holding-to-departure legs. Neither a stand nor a direct route is assumed. Unknown gates are not assigned an area. Completed departures, overnight BSE rules and same-gate long-stay decisions retain their existing behavior. Both holding legs must be included together and connected; US 73 → S4B → US 75 is valid even though the flight gates differ.
+
+## Overnight shutdown report
+
+Upload a flight CSV, open Shutdown, select the night (defaults to the uploaded report date), and paste maintenance-required FINs. Regeneration replaces edits; exports pause while list/date changes are unapplied. One row per FIN is generated from a turn spanning the selected night, including post-midnight arrivals before 08:00. Listed FINs absent from the schedule remain visible with missing-data warnings. Unlisted overnight FINs stay HGR pending maintenance review.
+
+Required FINs and all unlisted overnight aircraft default to HGR. Duplicate gate assignments prevent a reviewed report.
+
+Grooming defaults to X when the schedule shows flight activity on the selected day, including an arrival during its overnight continuation. US/TB defaults are inferred from departure gate categories and explicitly require destination confirmation; unknown gates show ? until reviewed. The CSV may contain actual/estimated departure times rather than STD; those rows are flagged and editable. The report has maintenance/other sections and all eight screenshot columns, with CSV export and landscape printing. Shutdown reporting does not automatically rewrite the separate tow plan. Changes remain in memory across tab switching but not new sessions or reloads.
+
+## Airport gate mismatch checking
+
+After uploading a turn-view CSV, use Mismatch to upload the airport daily planning XLSX. ExcelJS loads on demand and reads the workbook in the browser. Matching uses flight identity, arrival/departure direction and scheduled or estimated airport dates. AC / ACA / QK / JZA are grouped for the supplied feeds; other airlines remain distinct. Separate TOW rows are matched independently.
+
+Numeric gate prefixes and suffixes are ignored for comparison: 21, A21, 21A and 21B are equivalent, as are 2 and 2A. Named locations such as BSE and S4B are preserved. This comparison rule does not rewrite the original tow plan or its gate values.
+
+Mismatch has a five-column shadcn table (FIN, flight/date, movement, turn-view gate, airport gate), with separate Mismatches and Unverified views and compact summary badges. There are no source columns, review notes or mark-checked controls. Gate checks do not appear in Review, contribute to its badge, or affect tow-sheet draft status. Missing records and ambiguous assignments are shown as unverified, never as confirmed mismatches. Imports remain session-only.
+
+Workbook parsing uses the documented ExcelJS XLSX load and worksheet row APIs: https://github.com/exceljs/exceljs#reading-xlsx . The supplied XLSX is retained only as a test fixture, never preloaded into the UI.

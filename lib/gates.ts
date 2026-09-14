@@ -1,0 +1,29 @@
+import { gate, type Report, type Move } from './tows.ts';
+export type Assignment={flight:string; key:string; direction:'arrival'|'departure'; dates:string[]; gate:string; sheet:string; row:number; time:string};
+export type AirportPlan={name:string;date:string;assignments:Assignment[];warnings:string[]};
+export type GateCheck={id:string;turnId:string;fin:string;flight:string;direction:'arrival'|'departure';date:string;csvGate:string;airportGate:string;status:'match'|'mismatch'|'unmatched'|'ambiguous'|'missing';sources:string[];tow:boolean};
+export function comparisonGate(value:string){const raw=(value.split('/').pop()||'').trim().toUpperCase();const numeric=/^(?:[AC])?(\d+)[A-Z]*$/.exec(raw);return numeric?gate(numeric[1]):raw;}
+export function flightKey(value:string){const m=/^([A-Z]{2,3})\s*0*(\d+)([A-Z]?)$/.exec(value.trim().toUpperCase());if(!m)return '';const carrier=['QK','JZA','AC','ACA'].includes(m[1])?'AC':m[1];return `${carrier}${Number(m[2])}${m[3]}`;}
+const text=(v:unknown):string=>{if(v===null||v===undefined)return '';if(typeof v==='object'&&!(v instanceof Date)){const o=v as {result?:unknown;text?:string;richText?:{text:string}[]};return o.result!==undefined?text(o.result):o.text||o.richText?.map(x=>x.text).join('')||'';}return String(v).trim();};
+function dateTime(v:unknown,date1904=false):string{if(v instanceof Date)return Number.isFinite(v.getTime())?v.toISOString().slice(0,16):'';if(typeof v==='object'&&v&&'result'in v)return dateTime((v as {result:unknown}).result,date1904);if(typeof v==='number'&&v>1&&v<100000)return new Date((v-(date1904?24107:25569))*86400000).toISOString().slice(0,16);const s=text(v);return /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(s)?s.slice(0,16).replace(' ','T'):'';}
+export function parseAirportSheets(sheets:{name:string;rows:unknown[][]}[],name:string,date1904=false):AirportPlan{
+ const plan:AirportPlan={name,date:'',assignments:[],warnings:[]};let recognized=0;
+ for(const sheet of sheets){const header=sheet.rows.findIndex(r=>r.some(c=>/Arr Flight/i.test(text(c)))&&r.some(c=>/Dep Flight/i.test(text(c)))&&r.some(c=>/\bGate\b/i.test(text(c))));if(header<0)continue;recognized++;
+ const h=sheet.rows[header].map(text);const index=(pattern:RegExp)=>h.findIndex(c=>pattern.test(c));const g=index(/\bGate\b/i);
+ for(const row of sheet.rows.slice(0,header)){for(const c of row){const m=/\b(\d{4}-\d{2}-\d{2})\b/.exec(text(c));if(m&&!plan.date)plan.date=m[1];}}
+ const columns=[{direction:'arrival' as const,f:index(/Arr Flight/i),t:index(/Arr Time/i),e:index(/^ETA$/i)},{direction:'departure' as const,f:index(/Dep Flight/i),t:index(/Dep Time/i),e:index(/^ETD$/i)}];
+ if(columns.some(c=>c.t<0))throw Error(`Missing arrival/departure time headers in ${sheet.name}.`);
+ for(let i=header+1;i<sheet.rows.length;i++){const r=sheet.rows[i];for(const c of columns){const flight=text(r[c.f]);if(!flight)continue;const key=flightKey(flight);if(!key){if(!/Flight|Vol|total/i.test(flight))plan.warnings.push(`${sheet.name}, row ${i+1}: unrecognized flight ${flight}.`);continue;}const times=[dateTime(r[c.t],date1904),dateTime(r[c.e],date1904)].filter(Boolean);const dates=[...new Set(times.map(t=>t.slice(0,10)))];if(!dates.length){plan.warnings.push(`${sheet.name}, row ${i+1}: ${flight} ${c.direction} has no dated time; not matched.`);continue;}plan.assignments.push({flight,key,direction:c.direction,dates,gate:gate(text(r[g])),sheet:sheet.name,row:i+1,time:times[0]});}}
+ }
+ if(!recognized)throw Error('No airport assignment table found. Expected Arr Flight, Arr Time, Dep Flight, Dep Time and Gate headers.');if(!plan.assignments.length)throw Error('No dated flight assignments found in this workbook.');return plan;
+}
+export async function readAirportWorkbook(data:ArrayBuffer,name:string):Promise<AirportPlan>{const module=await import('exceljs');const Workbook=module.default?.Workbook||module.Workbook;const workbook=new Workbook();await workbook.xlsx.load(data);const sheets:{name:string;rows:unknown[][]}[]=[];workbook.eachSheet(sheet=>{const rows:unknown[][]=[];sheet.eachRow({includeEmpty:true},row=>{if(rows.length>50000)throw Error('Workbook has too many rows. Use a daily report.');const values=row.values;rows.push(Array.isArray(values)?values.slice(1):[]);});sheets.push({name:sheet.name,rows});});return parseAirportSheets(sheets,name,workbook.properties.date1904);}
+export function compareGates(report:Report,plan:AirportPlan,moves:Move[]):GateCheck[]{
+ const checks:GateCheck[]=[];
+ for(const t of report.turns){for(const direction of ['arrival','departure'] as const){const flight=direction==='arrival'?t.arrFlight:t.depFlight;const time=direction==='arrival'?t.arrival:t.departure;if(!flight)continue;const date=time===null?'':new Date(time).toISOString().slice(0,10);const key=flightKey(flight);const candidates=plan.assignments.filter(a=>a.key===key&&key&&a.direction===direction&&a.dates.includes(date));const gates=[...new Set(candidates.map(a=>comparisonGate(a.gate)))];const csvGate=direction==='arrival'?t.from:t.to;
+ const status:GateCheck['status']=!date||!csvGate?'missing':!candidates.length?'unmatched':gates.length>1?'ambiguous':!gates[0]?'missing':gates[0]===comparisonGate(csvGate)?'match':'mismatch';
+ const active=moves.some(m=>m.included&&(m.turnId===t.id||m.fin===t.fin&&date===report.date&&flightKey(direction==='arrival'?m.arrFlight:m.depFlight)===key)&&(direction==='arrival'?!!m.arrFlight:!!m.depFlight));
+ const potential=['gate','same-area','long','incomplete'].includes(t.kind)||t.kind==='bse-in'&&direction==='arrival'||t.kind==='bse-out'&&direction==='departure';
+ checks.push({id:`${t.id}-${direction}`,turnId:t.id,fin:t.fin,flight,direction,date,csvGate,airportGate:gates.filter(Boolean).join(' / '),status,sources:candidates.map(a=>`${a.sheet} · row ${a.row} · ${a.flight}`),tow:active||potential});
+ }}return checks;
+}
