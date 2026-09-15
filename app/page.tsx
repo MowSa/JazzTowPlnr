@@ -1,23 +1,71 @@
 'use client';
+import { shutdownErrors, shutdownPlanErrors } from '@/lib/shutdown';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { Plane, Upload, ArrowRight, FileSpreadsheet, CheckCircle2, MoveRight, Warehouse, Clock3, Download, Printer, Plus, Settings2, ListChecks, Info, Pencil, Search, AlertTriangle, Check, X } from 'lucide-react';
-import { Table, TableHeader, TableHead, TableRow, TableBody, TableCell } from '@/components/ui/table';
+import {
+  Upload,
+  ArrowRight,
+  FileSpreadsheet,
+  CheckCircle2,
+  MoveRight,
+  Clock3,
+  Download,
+  Printer,
+  Plus,
+  Settings2,
+  ListChecks,
+  Info,
+  Pencil,
+  Search,
+  AlertTriangle,
+  Check,
+  X,
+} from 'lucide-react';
+import {
+  Table,
+  TableHeader,
+  TableHead,
+  TableRow,
+  TableBody,
+  TableCell,
+} from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Input } from '@/components/ui/input';
-import { Popover, PopoverTrigger, PopoverContent, PopoverTitle, PopoverDescription } from '@/components/ui/popover';
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+  PopoverTitle,
+  PopoverDescription,
+} from '@/components/ui/popover';
 import { Progress } from '@/components/ui/progress';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
-import { readAirportWorkbook, compareGates, type AirportPlan } from '@/lib/gates';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from '@/components/ui/sheet';
+import {
+  readAirportWorkbook,
+  compareGates,
+  applyOccupancyPickups,
+  type AirportPlan,
+} from '@/lib/gates';
 import { GateVerification } from '@/components/gate-verification';
+import { GateOccupancy } from '@/components/gate-occupancy';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { ConsoleNav, StationHeader, AircraftDrawer, type OvernightSnapshot } from '@/components/operations-console';
+import {
+  ConsoleNav,
+  StationHeader,
+  AircraftDrawer,
+  type OvernightSnapshot,
+} from '@/components/operations-console';
 import { towStatus, statusNames, type BoardFilter } from '@/lib/console';
 import { ReportTimestamp } from '@/components/report-timestamp';
 import { AircraftSearch } from '@/components/aircraft-search';
@@ -26,91 +74,1676 @@ import { TowTimeline } from '@/components/tow-timeline';
 import { OperationsOverview } from '@/components/operations-overview';
 import { buildShutdown } from '@/lib/shutdown';
 import ShutdownPlanner from '@/components/shutdown-planner';
-import { analyze, makeMoves, longMoves, moveErrors, timeLabel, sheetHeaders, sheetValues, exportCSV, planIssues, gateArea, gate, towLocation, type Report, type Turn, type Move } from '@/lib/tows';
-const initialReport:Report={date:'',station:'YUL',turns:[],cancelled:0,duplicates:0,warnings:[]};
-const kindLabel={'same-area':'Same-area',gate:'Gate change','bse-in':'To BSE','bse-out':'From BSE',long:'Long stay',manual:'Manual',none:'No tow',incomplete:'Missing data'};
-const shortFlight=(s:string)=>s.replace(/^QK\s*/,'');
-const formatDate=(date:string)=>!date?'Upload a schedule to set the date':new Date(date+'T12:00:00Z').toLocaleDateString('en-GB',{day:'2-digit',month:'long',year:'numeric',timeZone:'UTC'});
-type Registry={registerTool:(tool:{name:string;title:string;description:string;inputSchema:object;annotations:object;execute:(v:unknown)=>unknown},options:{signal:AbortSignal})=>void|Promise<void>};
+import {
+  analyze,
+  makeMoves,
+  longMoves,
+  moveErrors,
+  timeLabel,
+  sheetHeaders,
+  sheetValues,
+  exportCSV,
+  planIssues,
+  gate,
+  towLocation,
+  type Report,
+  type Turn,
+  type Move,
+} from '@/lib/tows';
+const initialReport: Report = {
+  date: '',
+  station: 'YUL',
+  turns: [],
+  cancelled: 0,
+  duplicates: 0,
+  warnings: [],
+};
+const kindLabel = {
+  'same-area': 'Same-area',
+  gate: 'Gate change',
+  'bse-in': 'To BSE',
+  'bse-out': 'From BSE',
+  long: 'Long stay',
+  manual: 'Manual',
+  none: 'No tow',
+  incomplete: 'Missing data',
+};
+const shortFlight = (s: string) => s.replace(/^QK\s*/, '');
+const formatDate = (date: string) =>
+  !date
+    ? 'Upload a schedule to set the date'
+    : new Date(date + 'T12:00:00Z').toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+        timeZone: 'UTC',
+      });
+type Registry = {
+  registerTool: (
+    tool: {
+      name: string;
+      title: string;
+      description: string;
+      inputSchema: object;
+      annotations: object;
+      execute: (v: unknown) => unknown;
+    },
+    options: { signal: AbortSignal },
+  ) => void | Promise<void>;
+};
 
-export default function Home(){
- const [uploadedAt,setUploadedAt]=useState<number|null>(null),[boardFilter,setBoardFilter]=useState<BoardFilter|'ready'|'excluded'>('all'),[selectedFin,setSelectedFin]=useState<string|null>(null);
- const [overnightSnapshot,setOvernightSnapshot]=useState<OvernightSnapshot>({rows:[],date:'',dirty:false,generated:false});
- function go(value:string){setTab(value);document.body.dataset.printReport=value==='shutdown'?'shutdown':'tow';}
- const [report,setReport]=useState<Report>(initialReport),[moves,setMoves]=useState<Move[]>([]);
- const [fileName,setFileName]=useState(''),[uploadRevision,setUploadRevision]=useState(0);
- const [aircraftNotes,setAircraftNotes]=useState<Record<string,string>>({});
- const [towView,setTowView]=useState('timeline'),[towSort,setTowSort]=useState('pickup');
- const [sourcesOpen,setSourcesOpen]=useState(false),[navCollapsed,setNavCollapsed]=useState(false);
- const [tab,setTab]=useState('overview'),[search,setSearch]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[loading,setLoading]=useState(false),[dragging,setDragging]=useState(false);
- const [dateOverride,setDateOverride]=useState(''),[decisions,setDecisions]=useState<Record<string,string>>({}),[holding,setHolding]=useState<Record<string,string>>({});
- const [editing,setEditing]=useState<Move|null>(null),[editError,setEditError]=useState('');
- const [airport,setAirport]=useState<AirportPlan|null>(null),[airportLoading,setAirportLoading]=useState(false),[airportError,setAirportError]=useState('');
- const airportInput=useRef<HTMLInputElement>(null),airportGeneration=useRef(0);
- const gateChecks=useMemo(()=>airport?compareGates(report,airport,moves):[],[report,airport,moves]);
- const mismatches=gateChecks.filter(c=>c.status==='mismatch');
- async function uploadAirport(file:File){const generation=++airportGeneration.current;setAirportLoading(true);setAirportError('');try{if(!/\.xlsx$/i.test(file.name))throw Error('Upload the airport .xlsx workbook.');if(file.size>10*1024*1024)throw Error('Use a daily workbook smaller than 10 MB.');const plan=await readAirportWorkbook(await file.arrayBuffer(),file.name);if(generation!==airportGeneration.current)return;setAirport(plan);}catch(e){if(generation===airportGeneration.current)setAirportError(e instanceof Error?e.message:'Could not read the airport workbook.');}finally{if(generation===airportGeneration.current)setAirportLoading(false);if(airportInput.current)airportInput.current.value='';}}
- const fileInput=useRef<HTMLInputElement>(null);
- const selected=useMemo(()=>moves.filter(m=>m.included).sort((a,b)=>(a.pickup||'99').localeCompare(b.pickup||'99')||a.fin.localeCompare(b.fin)),[moves]);
- const longTurns=report.turns.filter(t=>t.kind==='long');
- const pendingLong=longTurns.filter(t=>!decisions[t.id]);
- const areaTurns=report.turns.filter(t=>t.kind==='same-area');
- const pendingArea=areaTurns.filter(t=>!decisions[t.id]);
- const unresolved=moves.filter(m=>m.kind==='incomplete'&&!m.reviewed);
- const unreviewed=selected.filter(m=>!m.reviewed||moveErrors(m,report.date).length>0);
- const isNewManual=editing?.kind==='manual'&&!moves.some(m=>m.id===editing.id);
- const issues=planIssues(moves);
- const draft=pendingArea.length>0||issues.length>0||unreviewed.length>0||pendingLong.length>0||unresolved.length>0||report.warnings.length>0;
- const filtered=moves.filter(m=>(boardFilter==='all'||towStatus(m,report.date)===boardFilter)&&`${m.fin} ${m.arrFlight} ${m.depFlight} ${m.from} ${m.to}`.toLowerCase().includes(search.toLowerCase())).sort((a,b)=>towSort==='fin'?a.fin.localeCompare(b.fin,undefined,{numeric:true})||a.pickup.localeCompare(b.pickup):(a.pickup||'99').localeCompare(b.pickup||'99')||a.fin.localeCompare(b.fin));
- const reviewCount=pendingLong.length+pendingArea.length+unresolved.length+report.warnings.length+unreviewed.filter(m=>m.kind!=='incomplete').length+issues.length;
- const detectedOvernight=useMemo(()=>report.date?buildShutdown(report,report.date,'',''):[],[report]);
- const importText=useCallback((text:string,name:string,date?:string)=>{
-  const result=analyze(text,date);airportGeneration.current++;setAirport(null);setAirportError('');setAirportLoading(false);setReport(result);setMoves(makeMoves(result));setFileName(name);setUploadedAt(Date.now());setBoardFilter('all');setSelectedFin(null);setAircraftNotes({});setOvernightSnapshot({rows:[],date:'',dirty:false,generated:false});setUploadRevision(v=>v+1);setDecisions({});setHolding({});setEditing(null);setSearch('');setTab('overview');setSourcesOpen(false);setError('');setNotice(`${result.turns.length} aircraft turns analyzed. Review the proposed moves before issuing the sheet.`);return result;
- },[]);
- async function upload(file:File){setError('');setLoading(true);try{if(file.size>5*1024*1024)throw Error('Please use a CSV smaller than 5 MB.');if(!/\.csv$/i.test(file.name))throw Error('Please upload a .csv flight schedule.');importText(await file.text(),file.name,dateOverride||undefined);}catch(e){setError(e instanceof Error?e.message:'Unable to read this file.');}finally{setLoading(false);if(fileInput.current)fileInput.current.value='';}}
- useEffect(()=>{const fresh=(event:PageTransitionEvent)=>{if(event.persisted)window.location.reload();};window.addEventListener('pageshow',fresh);return()=>window.removeEventListener('pageshow',fresh);},[]);
- const stateRef=useRef({report,moves,importText});stateRef.current={report,moves,importText};
- useEffect(()=>{
-  const registry=(document as Document&{modelContext?:Registry}).modelContext;if(!registry?.registerTool)return;const lifecycle=new AbortController();
-  const tools=[{name:'analyze_flight_csv',title:'Analyze flight CSV',description:'Replace the current working schedule with a turn-view CSV and display suggested tows. Current edits are replaced.',inputSchema:{type:'object',properties:{csv:{type:'string'},fileName:{type:'string'},operatingDate:{type:'string'}},required:['csv'],additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:true},execute:(input:unknown)=>{const v=input as Record<string,unknown>;if(!v||typeof v.csv!=='string'||v.csv.length>5*1024*1024||v.operatingDate!==undefined&&typeof v.operatingDate!=='string'||v.fileName!==undefined&&typeof v.fileName!=='string')throw Error('Provide CSV text and an optional operating date / filename.');let r:Report|undefined;flushSync(()=>{r=stateRef.current.importText(v.csv as string,typeof v.fileName==='string'?v.fileName:'Uploaded schedule.csv',v.operatingDate as string|undefined);});return {date:r!.date,turns:r!.turns.length,proposedMoves:makeMoves(r!).length,cancelled:r!.cancelled};}},{name:'read_tow_plan',title:'Read tow plan',description:'Read the current tow plan, review status and data issues.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true},execute:()=>({date:stateRef.current.report.date,moves:stateRef.current.moves,warnings:stateRef.current.report.warnings})}];
-  for(const tool of tools){try{void Promise.resolve(registry.registerTool(tool,{signal:lifecycle.signal})).catch(()=>{});}catch{/* Browser support is optional. */}}return()=>lifecycle.abort();
- },[]);
- function patch(id:string,values:Partial<Move>){setMoves(ms=>ms.map(m=>m.id===id?{...m,...values}:m));}
- function addManual(){setEditing({id:`manual-${crypto.randomUUID()}`,turnId:'',fin:'',arrFlight:'',depFlight:'',from:'',to:'',pickup:'',release:'',gateOpen:'',actualPickup:'',actualDrop:'',depTime:'',tower:'',kind:'manual',included:true,reviewed:false,reason:'Manually added tow move',earliest:null,latest:null,warnings:[]});setEditError('');}
- function reviewMove(m:Move){const errors=moveErrors(m,report.date);if(errors.length){setEditing(m);setEditError(errors.join(' '));return;}patch(m.id,{reviewed:!m.reviewed});}
- function decideLong(t:Turn,tow:boolean){try{const added=tow?longMoves(t,holding[t.id]||''):t.kind==='same-area'?makeMoves({...report,turns:[{...t,kind:'gate',reason:'Direct same-area tow confirmed during review.'}]}):[];setMoves(ms=>[...ms.filter(m=>m.turnId!==t.id),...added]);setDecisions(ds=>({...ds,[t.id]:tow?'tow':t.kind==='same-area'?'direct':'stay'}));setError('');setNotice(tow?`FIN ${t.fin}: added a holding move and return move.`:t.kind==='same-area'?`FIN ${t.fin}: direct tow ${t.from} → ${t.to} added.`:`FIN ${t.fin}: marked to stay at gate ${t.from}.`);}catch(e){setError((e as Error).message);}}
- function saveEdit(e:React.FormEvent){e.preventDefault();if(!editing)return;const errors=moveErrors(editing,report.date);if(errors.length){setEditError(errors.join(' '));return;}const creating=!moves.some(m=>m.id===editing.id),normalize=editing.kind==='long'||editing.kind==='same-area'||editing.kind==='manual'?towLocation:gate;const saved={...editing,from:normalize(editing.from),to:normalize(editing.to),reviewed:true};setMoves(ms=>creating?[...ms,saved]:ms.map(m=>m.id===saved.id?saved:m));setEditing(null);setEditError('');setNotice(`FIN ${editing.fin}: ${creating?'manual tow added':'move saved and reviewed'}.`);}
- function download(){const data=exportCSV(report,selected,draft);const url=URL.createObjectURL(new Blob([data],{type:'text/csv;charset=utf-8;'}));const a=document.createElement('a');a.href=url;a.download=`tow-sheet-${report.station}-${report.date}${draft?'-DRAFT':''}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);setNotice(`${draft?'Draft':'Reviewed'} tow sheet downloaded.`);}
- function print(){document.body.dataset.printReport='tow';flushSync(()=>setTab('sheet'));window.print();}
- useEffect(()=>{if(!notice)return;const timer=setTimeout(()=>setNotice(''),6000);return()=>clearTimeout(timer);},[notice]);
-useEffect(()=>{const prepare=()=>{document.body.dataset.printReport=tab==='shutdown'?'shutdown':'tow';};window.addEventListener('beforeprint',prepare);return()=>window.removeEventListener('beforeprint',prepare);},[tab]);
- const flightCell=(flight:string,time:number|null)=> <><span>{shortFlight(flight)||'—'}</span><small>{timeLabel(time,report.date)}</small></>;
- return <SidebarProvider className={`operations-shell ${navCollapsed?'nav-collapsed':''}`}><a href="#workspace" className="skip-link">Skip to workspace</a><ConsoleNav tab={tab} go={go} reviewCount={reviewCount} gateCount={mismatches.length} overnightCount={overnightSnapshot.rows.filter(r=>!r.reviewed).length} towCount={selected.length} collapsed={navCollapsed} toggle={()=>setNavCollapsed(v=>!v)}/><div className="console-main"><StationHeader station={report.station} date={report.date} uploadedAt={uploadedAt} turns={report.turns.length} tows={selected.length} actions={reviewCount} airportLoaded={!!airport} dateMismatch={!!airport?.date&&airport.date!==report.date} onFiles={()=>setSourcesOpen(true)} search={<AircraftSearch report={report} moves={moves} overnight={overnightSnapshot} onFin={setSelectedFin}/>}/>
- <main id="workspace" tabIndex={-1}><div className="page-heading no-print"><div className="heading-copy"><div className="eyebrow">{report.station} / OPERATING PLAN</div><div className="title-line"><h1>{({overview:'Operations Overview',moves:'Tow Plan',schedule:'Flight Schedule',sheet:'Reports / Outputs',mismatch:'Gate Verification',shutdown:'Overnight Plan',review:'Review & Resolve'} as Record<string,string>)[tab]}</h1><Badge variant="outline" className={`plan-status ${!fileName?'is-new':draft?'is-draft':'is-ready'}`}>{!fileName?'No plan loaded':draft?'Draft tow plan':'Tow plan ready'}</Badge></div><p className="section-subtitle">{tab==='mismatch'?'Compare Jazz turn-view gates with airport assignments.':tab==='shutdown'?'Aircraft positions and maintenance requirements for the night.':tab==='review'?'Resolve operational decisions before issuing the plan.':tab==='overview'?'The operating picture, with exceptions first.':'Aircraft movements · All schedule times local'}</p></div></div>
- <Sheet open={sourcesOpen} onOpenChange={setSourcesOpen}><SheetContent className="edit-sheet source-manager"><SheetHeader><SheetTitle>Source files</SheetTitle><SheetDescription>Manage the operating day’s source data. Replacing the schedule resets working edits.</SheetDescription></SheetHeader>
- {error&&<p role="alert" className="message error">{error}</p>}
- <section className={`upload-panel ${dragging?'dragging':''}`} onDragOver={e=>{e.preventDefault();setDragging(true);}} onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget as Node|null))setDragging(false);}} onDrop={e=>{e.preventDefault();setDragging(false);if(e.dataTransfer.files[0])void upload(e.dataTransfer.files[0]);}} aria-label="Upload flight schedule">
- <div className="source-heading"><span><FileSpreadsheet size={15}/> FLIGHT SCHEDULE</span><Popover><PopoverTrigger className="source-options" aria-label="Schedule details and upload date"><Settings2 size={16}/></PopoverTrigger><PopoverContent align="end" className="source-popover"><PopoverTitle>Schedule details</PopoverTitle><PopoverDescription>Uploads are processed in your browser. Edits last for this session.</PopoverDescription><p className="source-full-name">{fileName}</p><p>{report.turns.length} aircraft turns · {report.cancelled} cancelled entries skipped{report.duplicates>0?` · ${report.duplicates} duplicates skipped`:''}</p><label>Upload date override<Input type="date" value={dateOverride} onChange={e=>setDateOverride(e.target.value)}/></label><p className="muted">Leave blank to use the date in the CSV.</p></PopoverContent></Popover></div>
- <div className="source-body"><div className="file-description"><strong title={fileName}>{fileName||'No schedule uploaded'}</strong><span>{dragging?'Drop to load this schedule':!fileName?'Start with a turn-view CSV':report.turns.length+' aircraft turns loaded'}</span></div><Button className="button upload-button" variant="outline" onClick={()=>fileInput.current?.click()} disabled={loading}><Upload size={16}/>{loading?'Reading…':'Upload CSV'}</Button></div>
- </section><section className="source-airport"><h3>AIRPORT PLAN</h3><strong>{airport?.name||'No airport workbook loaded'}</strong><p>{airport?`${airport.assignments.length} assignments · ${airport.date||'Report date unavailable'}`:'Upload the daily airport planning workbook.'}</p><Button variant="outline" className="button" disabled={!fileName||airportLoading} onClick={()=>airportInput.current?.click()}>{airportLoading?'Reading workbook…':airport?'Replace airport plan':'Upload airport plan'}</Button>{airportError&&<p role="alert" className="warning-text">{airportError}</p>}</section>{airport?.date&&airport.date!==report.date&&<div className="source-date-warning"><AlertTriangle size={18}/><div><strong>Source dates differ</strong><p>Turn schedule: {report.date}<br/>Airport plan: {airport.date}</p></div></div>}<p className="source-session-note">Files stay in this browser session. Download reports before refreshing or closing.</p></SheetContent></Sheet><input ref={fileInput} hidden type="file" accept=".csv,text/csv" onChange={e=>{if(e.target.files?.[0])void upload(e.target.files[0]);}}/><input hidden ref={airportInput} type="file" accept=".xlsx" onChange={e=>{if(e.target.files?.[0])void uploadAirport(e.target.files[0]);}}/>
- {loading&&<output className="analysis-progress no-print"><span className="analysis-pulse"/><div><strong>Analyzing operating plan…</strong><p>Reading aircraft turns and calculating proposed movements.</p></div></output>}
- {airport?.date&&airport.date!==report.date&&tab!=='mismatch'&&<button className="global-source-warning no-print" onClick={()=>go('mismatch')}><AlertTriangle size={16}/><span>Source dates differ: turn schedule {report.date} / airport plan {airport.date}</span><span>Check files <ArrowRight size={14}/></span></button>}
- {error&&<div role="alert" className="message error no-print"><AlertTriangle size={18}/>{error}<button aria-label="Dismiss error" onClick={()=>setError('')}><X size={16}/></button></div>}
- {issues.map(issue=><div role="alert" key={issue} className="message error no-print"><AlertTriangle size={18}/>{issue}</div>)}
- {notice&&<div role="status" className="message notice toast no-print"><CheckCircle2 size={17}/>{notice}<button aria-label="Dismiss notice" onClick={()=>setNotice('')}><X size={16}/></button></div>}
- {!fileName?<Card className="session-empty no-print"><CardContent><FileSpreadsheet size={34}/><h2>Start a new operating day</h2><p>Upload your flight schedule to plan tows and prepare the overnight shutdown report.</p><Button className="button primary" onClick={()=>fileInput.current?.click()} disabled={loading}><Upload size={17}/>Upload flight schedule</Button><small>Every new session starts empty. Download your reports before leaving.</small></CardContent></Card>:<>
- {tab==='moves'&&<ToggleGroup className="status-strip no-print" aria-label="Filter tow board by status" value={[boardFilter]} onValueChange={values=>{setBoardFilter((values[0]||'all') as BoardFilter|'ready'|'excluded');go('moves');}}>{([{id:'all',label:'Total tows',Icon:MoveRight},{id:'review',label:'Awaiting review',Icon:ListChecks},{id:'ready',label:'Ready',Icon:Check},{id:'progress',label:'In progress',Icon:Clock3},{id:'completed',label:'Completed',Icon:CheckCircle2},{id:'excluded',label:'Excluded',Icon:X}] as const).map(({id,label,Icon})=><ToggleGroupItem value={id} key={id} className={`status-tile status-${id}`}><Icon size={17}/><span>{label}</span><strong>{(id==='all'?moves.length:moves.filter(m=>towStatus(m,report.date)===id).length).toString().padStart(2,'0')}</strong></ToggleGroupItem>)}</ToggleGroup>}
- <Tabs value={tab} onValueChange={value=>go(String(value))} className="workspace-tabs"><div className="workspace-toolbar no-print">{['moves','schedule','sheet'].includes(tab)&&<TabsList variant="line"><TabsTrigger value="moves">Tow plan</TabsTrigger><TabsTrigger value="schedule">Flight schedule</TabsTrigger><TabsTrigger value="sheet">Printable sheet</TabsTrigger></TabsList>}{['moves','schedule','sheet'].includes(tab)&&<div className="actions"><Button className="button" variant="outline" onClick={addManual}><Plus size={16}/>Add tow</Button><Button className="button" variant="outline" onClick={download} disabled={!selected.length}><Download size={16}/>Export CSV</Button><Button className="button" variant="outline" onClick={print} disabled={!selected.length}><Printer size={16}/>Print sheet</Button></div>}</div>
- <TabsContent value="overview" className="no-print"><OperationsOverview report={report} moves={moves} pending={[...pendingArea,...pendingLong]} reviewCount={reviewCount} gateChecks={gateChecks} airportLoaded={!!airport} overnight={overnightSnapshot} overnightCount={overnightSnapshot.generated?overnightSnapshot.rows.length:detectedOvernight.length} draft={draft} go={go} onFin={setSelectedFin}/></TabsContent>
- <TabsContent value="moves" className="no-print"><section className="panel"><div className="panel-heading"><div><h2>{boardFilter==='all'?'Aircraft movements':statusNames[boardFilter]} <span className="table-count">{filtered.length}</span></h2><p className="section-subtitle">{selected.length} included on sheet · {selected.length-unreviewed.length} reviewed</p></div><div className="tow-view-controls"><Tabs value={towView} onValueChange={v=>setTowView(String(v))}><TabsList aria-label="Tow plan view"><TabsTrigger value="timeline">Timeline</TabsTrigger><TabsTrigger value="table">Table</TabsTrigger></TabsList></Tabs><label className="sort-control">Sort<select value={towSort} onChange={e=>setTowSort(e.target.value)}><option value="pickup">Pickup time</option><option value="fin">FIN</option></select></label><div className="search-box"><Search size={16}/><Input aria-label="Search tow moves" placeholder="Find aircraft, flight or gate" value={search} onChange={e=>setSearch(e.target.value)}/></div></div></div>
- {unreviewed.length>0&&<div className="inline-note"><Info size={16}/><span>Review each move before issuing. BSE locations are inferred from overnight turns.</span></div>}
- {towView==='timeline'?<TowTimeline report={report} moves={filtered} pending={boardFilter==='all'||boardFilter==='review'?[...pendingArea,...pendingLong].filter(t=>`${t.fin} ${t.arrFlight} ${t.depFlight} ${t.from} ${t.to}`.toLowerCase().includes(search.toLowerCase())):[]} selectedFin={selectedFin} onFin={setSelectedFin} onMove={m=>{setEditing({...m});setEditError('');}} onReview={()=>go('review')}/>:<> <Table><TableHeader><TableRow>{['USE','FIN #','ARRIVAL','TOW ROUTE','SKED PICKUP','DEPARTURE','GROUND','STATUS','REASON','REVIEW'].map(h=><TableHead key={h}>{h}</TableHead>)}</TableRow></TableHeader><TableBody>{filtered.map(m=>{const turn=report.turns.find(t=>t.id===m.turnId);const errs=moveErrors(m,report.date);return <TableRow key={m.id} className={!m.included?'excluded':''}><TableCell><Checkbox aria-label={`Include FIN ${m.fin} ${m.from} to ${m.to}`} checked={m.included} onCheckedChange={v=>patch(m.id,{included:!!v})}/></TableCell><TableCell className="fin"><Button variant="link" className="fin-link" onClick={()=>setSelectedFin(m.fin)}>{m.fin||'—'}</Button></TableCell><TableCell className="flight-cell">{flightCell(m.arrFlight,m.arrFlight?turn?.arrival??null:null)}</TableCell><TableCell><div className="tow-route"><span className={m.from==='BSE'?'gate bse':'gate'}>{m.from||'?'}</span><ArrowRight size={15}/><span className={m.to==='BSE'?'gate bse':'gate'}>{m.to||'?'}</span></div></TableCell><TableCell><Button variant="ghost" className="pickup-edit" onClick={()=>{setEditing({...m});setEditError('');}} aria-label={`Edit FIN ${m.fin} pickup ${m.pickup||'unset'}`}>{m.pickup||'Set time'}<Pencil size={12}/></Button></TableCell><TableCell className="flight-cell"><span>{shortFlight(m.depFlight)||'—'}</span><small>{m.depTime||'No departure today'}</small></TableCell><TableCell className="mono">{turn?.duration!==null&&turn?.duration!==undefined?`${Math.floor(turn.duration/60)}h ${turn.duration%60}m`:'—'}</TableCell><TableCell><Badge variant="outline" className={`execution-status execution-${towStatus(m,report.date)}`}>{statusNames[towStatus(m,report.date)]}</Badge></TableCell><TableCell><Badge variant="outline" className={`reason-badge ${m.kind.startsWith('bse')?'blue':m.kind==='long'||m.kind==='same-area'||m.kind==='incomplete'?'amber':''}`}>{kindLabel[m.kind]}</Badge>{(m.warnings.length>0||errs.length>0)&&<span className="row-warning" title={[...m.warnings,...errs].join(' ')}><AlertTriangle size={13}/> Check details</span>}</TableCell><TableCell><div className="row-actions"><Button variant="outline" className={`review-button ${m.reviewed?'done':''}`} onClick={()=>reviewMove(m)} aria-label={`${m.reviewed?'Undo review':'Review'} FIN ${m.fin} ${m.from} to ${m.to}`}>{m.reviewed?<Check size={15}/>:<CheckCircle2 size={15}/>} {m.reviewed?'Reviewed':'Review'}</Button><Button variant="ghost" size="icon-sm" className="icon-button" aria-label={`Edit FIN ${m.fin} ${m.from} to ${m.to}`} onClick={()=>{setEditing({...m});setEditError('');}}><Pencil size={15}/></Button></div></TableCell></TableRow>})}</TableBody></Table>{!filtered.length&&<div className="empty-state">{moves.length?'No moves match this status and search.':'No tow moves identified for this schedule.'}</div>}
-</>}
- <div className="panel-footer"><div className="review-progress"><CheckCircle2 size={16}/><span>{selected.length-unreviewed.length} of {selected.length} moves reviewed</span><Progress aria-label="Included moves reviewed" value={selected.length?Math.round((selected.length-unreviewed.length)/selected.length*100):0}/></div><span>All times local · HH:MM</span></div></section></TabsContent>
- <TabsContent value="review" className="no-print"><ReviewWorkflow report={report} moves={moves} decisions={decisions} holding={holding} issues={issues} reviewCount={reviewCount} draft={draft} gateConflicts={mismatches.length} overnight={overnightSnapshot} onFin={setSelectedFin} onHolding={(id,value)=>setHolding(h=>({...h,[id]:value}))} onDecision={decideLong} onRevisit={t=>{setDecisions(ds=>{const next={...ds};delete next[t.id];return next;});setMoves(ms=>ms.filter(m=>m.turnId!==t.id));}} onEdit={m=>{setEditing({...m});setEditError('');}} onReview={reviewMove} onExclude={m=>patch(m.id,{reviewed:true,included:false})} go={go}/></TabsContent>
- <TabsContent value="schedule" className="schedule-panel no-print"><section className="panel"><div className="panel-heading"><h2>Flight schedule</h2><span className="muted">{report.turns.length} active turns · gate prefixes normalized</span></div><Table><TableHeader><TableRow>{['FIN #','ORIGIN','ARR FLIGHT','ARRIVAL (SOURCE)','ARR GATE','DEP GATE','DEP FLIGHT','DEPARTURE (SOURCE)','DESTINATION','RESULT'].map(h=><TableHead key={h}>{h}</TableHead>)}</TableRow></TableHeader><TableBody>{report.turns.map(t=><TableRow key={t.id}><TableCell className="fin"><Button variant="link" className="fin-link" onClick={()=>setSelectedFin(t.fin)}>{t.fin||'—'}</Button></TableCell><TableCell>{t.origin}</TableCell><TableCell>{shortFlight(t.arrFlight)||'—'}</TableCell><TableCell>{t.arrLabel||'—'}</TableCell><TableCell>{t.from||'—'}</TableCell><TableCell>{t.to||'—'}</TableCell><TableCell>{shortFlight(t.depFlight)||'—'}</TableCell><TableCell>{t.depLabel||'—'}</TableCell><TableCell>{t.destination}</TableCell><TableCell><Badge variant="outline" className={`reason-badge ${t.kind==='none'?'neutral':''}`}>{kindLabel[t.kind]}</Badge></TableCell></TableRow>)}</TableBody></Table><div className="panel-footer">TOD is departure and TOA is arrival. A / E / S mean actual, estimated, and scheduled. An actual departure in column L means no tow is required.</div></section></TabsContent>
- <TabsContent value="sheet" keepMounted className="sheet-tab"><div className="output-readiness no-print"><div><strong className={draft?'text-warning':'text-success'}>{draft?'Draft preview — review required':'Tow sheet ready for output'}</strong><p>{draft?`${reviewCount} review items remain. Draft export and printing are available for planning.`:'All included movements satisfy the existing tow review checks.'}</p></div><Button variant="outline" onClick={()=>go('review')}>{draft?'Resolve remaining items':'View review summary'}<ArrowRight size={14}/></Button></div><section className="paper"><div className="paper-heading"><div className="paper-title">TOW SHEET</div><div className="paper-brand">JazzTow <small>{report.station} · GROUND OPERATIONS</small></div><div className="paper-date"><span>DATE</span><strong>{formatDate(report.date).toUpperCase()}</strong></div></div><div className={`sheet-status ${draft?'draft':'ready'}`}>{draft?'DRAFT — REVIEW REQUIRED':'REVIEWED TOW SHEET'}<span>{draft?`${unreviewed.length} moves to review · ${pendingLong.length+pendingArea.length} routing decisions pending${unresolved.length?` · ${unresolved.length} incomplete turns`:''}${report.warnings.length?` · ${report.warnings.length} import issues`:''}${issues.length?` · ${issues.length} paired-tow issues`:''}`:`${selected.length} moves · All times local`}</span></div><Table className="tower-table"><TableHeader><TableRow><TableHead>#</TableHead>{sheetHeaders.map(h=><TableHead key={h}>{h}</TableHead>)}</TableRow></TableHeader><TableBody>{selected.map((m,i)=><TableRow key={m.id}><TableCell>{i+1}</TableCell>{sheetValues(m).map((v,j)=><TableCell key={j}>{v}</TableCell>)}</TableRow>)}{Array.from({length:Math.max(2,10-selected.length)},(_,i)=><TableRow key={`blank-${i}`}><TableCell>{selected.length+i+1}</TableCell>{sheetHeaders.map((_,j)=><TableCell key={j}>&nbsp;</TableCell>)}</TableRow>)}</TableBody></Table>{Object.entries(aircraftNotes).some(([fin,note])=>note.trim()&&selected.some(m=>m.fin===fin))&&<section className="paper-notes"><h3>OPERATIONAL NOTES</h3>{Object.entries(aircraftNotes).filter(([fin,note])=>note.trim()&&selected.some(m=>m.fin===fin)).map(([fin,note])=><p key={fin}><strong>FIN {fin}</strong> {note}</p>)}</section>}<div className="paper-footer">{report.station} · {report.date} · Local time<ReportTimestamp station={report.station}/><span>Prepared with JazzTow</span></div></section><p className="sheet-help no-print">Use the pencil beside a move to edit release, gate-open, actual pickup/drop, and tower fields. Print to paper or choose “Save as PDF”.</p></TabsContent><TabsContent value="mismatch" className="no-print"><GateVerification airport={airport} checks={gateChecks} date={report.date} loading={airportLoading} error={airportError} upload={()=>airportInput.current?.click()} onFin={setSelectedFin}/></TabsContent><TabsContent value="shutdown" keepMounted className="shutdown-tab"><ShutdownPlanner key={uploadRevision} report={report} onSnapshot={setOvernightSnapshot} onFin={setSelectedFin}/></TabsContent></Tabs></>}
- <footer className="app-footer no-print"><span>JazzTow · {report.station} operations</span><span>Review aircraft location and operational readiness before issuing.</span></footer></main>
- <Sheet open={!!editing} onOpenChange={open=>{if(!open)setEditing(null);}}><SheetContent className="edit-sheet"><SheetHeader><SheetTitle>{isNewManual?'Add tow move':`Edit tow · FIN ${editing?.fin||'unassigned'}`}</SheetTitle><SheetDescription>{isNewManual?'Enter the required route and pickup details.':editing?.reason}</SheetDescription></SheetHeader>{editing&&<form onSubmit={saveEdit} className="edit-form">{editing.kind==='manual'?<div className="edit-source">Manual tow move · required fields are marked *</div>:<div className="edit-source">Source: {timeLabel(report.turns.find(t=>t.id===editing.turnId)?.arrival??null,report.date)} arrival · {timeLabel(report.turns.find(t=>t.id===editing.turnId)?.departure??null,report.date)} departure</div>}{editing.warnings.map(w=><p key={w} className="edit-warning"><AlertTriangle size={15}/>{w}</p>)}<div className="edit-grid">{([['fin','FIN #','text'],['arrFlight','Arrival flight','text'],['from','Tow from','text'],['to','Tow to','text'],['pickup','Scheduled pickup','time'],['release','Aircraft release','time'],['gateOpen','Gate opens at','time'],['depFlight','Departure flight','text'],['depTime','Departure time','time'],['actualPickup','Actual pickup','time'],['actualDrop','Actual drop','time'],['tower','Tower','text']] as const).map(([key,label,type])=>{const required=['fin','from','to','pickup'].includes(key);return <label key={key}>{label}{required?' *':''}<Input type={type} required={required} readOnly={key==='depTime'&&editing.kind!=='manual'} value={editing[key]} onChange={e=>setEditing({...editing,[key]:e.target.value,reviewed:false})}/></label>})}</div><label className="check-label"><Checkbox checked={editing.included} onCheckedChange={v=>setEditing({...editing,included:!!v})}/>Include on tow sheet</label>{editError&&<p role="alert" className="warning-text">{editError}</p>}<p className="muted">Saving confirms this route, timing and any warnings have been reviewed.</p><Button type="submit" className="button primary"><Check size={17}/>{isNewManual?'Add tow move':'Save & mark reviewed'}</Button></form>}</SheetContent></Sheet>
- <AircraftDrawer gateChecks={gateChecks} airportLoaded={!!airport} decisions={decisions} go={page=>{setSelectedFin(null);go(page);}} note={selectedFin?aircraftNotes[selectedFin]||'':''} onNote={note=>{if(selectedFin)setAircraftNotes(notes=>({...notes,[selectedFin]:note}));}} fin={selectedFin} close={()=>setSelectedFin(null)} report={report} moves={moves} overnight={overnightSnapshot} edit={m=>{setSelectedFin(null);setEditing({...m});setEditError('');}}/></div></SidebarProvider>;
+export default function Home() {
+  const [uploadedAt, setUploadedAt] = useState<number | null>(null),
+    [boardFilter, setBoardFilter] = useState<
+      BoardFilter | 'ready' | 'excluded'
+    >('all'),
+    [selectedFin, setSelectedFin] = useState<string | null>(null);
+  const [overnightSnapshot, setOvernightSnapshot] = useState<OvernightSnapshot>(
+    { rows: [], date: '', dirty: false, generated: false },
+  );
+  function go(value: string) {
+    setTab(value);
+  }
+  const [report, setReport] = useState<Report>(initialReport),
+    [moves, setMoves] = useState<Move[]>([]);
+  const [fileName, setFileName] = useState(''),
+    [uploadRevision, setUploadRevision] = useState(0);
+  const [aircraftNotes, setAircraftNotes] = useState<Record<string, string>>(
+    {},
+  );
+  const [towView, setTowView] = useState('timeline'),
+    [towSort, setTowSort] = useState('pickup');
+  const [sourcesOpen, setSourcesOpen] = useState(false),
+    [navCollapsed, setNavCollapsed] = useState(false);
+  const [tab, setTab] = useState('overview'),
+    [search, setSearch] = useState(''),
+    [error, setError] = useState(''),
+    [notice, setNotice] = useState(''),
+    [loading, setLoading] = useState(false),
+    [dragging, setDragging] = useState(false);
+  const [dateOverride, setDateOverride] = useState(''),
+    [decisions, setDecisions] = useState<Record<string, string>>({}),
+    [holding, setHolding] = useState<Record<string, string>>({});
+  const [editing, setEditing] = useState<Move | null>(null),
+    [editError, setEditError] = useState('');
+  const [airport, setAirport] = useState<AirportPlan | null>(null),
+    [airportLoading, setAirportLoading] = useState(false),
+    [airportError, setAirportError] = useState('');
+  const airportInput = useRef<HTMLInputElement>(null),
+    airportGeneration = useRef(0);
+  const gateChecks = useMemo(
+    () => (airport ? compareGates(report, airport, moves) : []),
+    [report, airport, moves],
+  );
+  const mismatches = gateChecks.filter((c) => c.status === 'mismatch');
+  async function uploadAirport(file: File) {
+    const generation = ++airportGeneration.current;
+    setAirportLoading(true);
+    setAirportError('');
+    try {
+      if (!/\.xlsx$/i.test(file.name))
+        throw Error('Upload the airport .xlsx workbook.');
+      if (file.size > 10 * 1024 * 1024)
+        throw Error('Use a daily workbook smaller than 10 MB.');
+      const plan = await readAirportWorkbook(
+        await file.arrayBuffer(),
+        file.name,
+      );
+      if (generation !== airportGeneration.current) return;
+      setAirport(plan);
+      setMoves((ms) => {
+        if (!report.date || (plan.date && plan.date !== report.date)) return ms;
+        return applyOccupancyPickups(ms, report, plan.occupancies);
+      });
+      if (report.date && (!plan.date || plan.date === report.date)) {
+        setNotice(
+          'Airport plan loaded. Departure tow pickups now follow gate occupancy.',
+        );
+      }
+    } catch (e) {
+      if (generation === airportGeneration.current)
+        setAirportError(
+          e instanceof Error
+            ? e.message
+            : 'Could not read the airport workbook.',
+        );
+    } finally {
+      if (generation === airportGeneration.current) setAirportLoading(false);
+      if (airportInput.current) airportInput.current.value = '';
+    }
+  }
+  const fileInput = useRef<HTMLInputElement>(null);
+  const selected = useMemo(
+    () =>
+      moves
+        .filter((m) => m.included)
+        .sort(
+          (a, b) =>
+            (a.pickup || '99').localeCompare(b.pickup || '99') ||
+            a.fin.localeCompare(b.fin),
+        ),
+    [moves],
+  );
+  const longTurns = report.turns.filter((t) => t.kind === 'long');
+  const pendingLong = longTurns.filter((t) => !decisions[t.id]);
+  const areaTurns = report.turns.filter((t) => t.kind === 'same-area');
+  const pendingArea = areaTurns.filter((t) => !decisions[t.id]);
+  const unresolved = moves.filter(
+    (m) => m.kind === 'incomplete' && !m.reviewed,
+  );
+  const unreviewed = selected.filter(
+    (m) => !m.reviewed || moveErrors(m, report.date).length > 0,
+  );
+  const isNewManual =
+    editing?.kind === 'manual' && !moves.some((m) => m.id === editing.id);
+  const issues = planIssues(moves);
+  const draft =
+    pendingArea.length > 0 ||
+    issues.length > 0 ||
+    unreviewed.length > 0 ||
+    pendingLong.length > 0 ||
+    unresolved.length > 0 ||
+    report.warnings.length > 0;
+  const filtered = moves
+    .filter(
+      (m) =>
+        (boardFilter === 'all' || towStatus(m, report.date) === boardFilter) &&
+        `${m.fin} ${m.arrFlight} ${m.depFlight} ${m.from} ${m.to}`
+          .toLowerCase()
+          .includes(search.toLowerCase()),
+    )
+    .sort((a, b) =>
+      towSort === 'fin'
+        ? a.fin.localeCompare(b.fin, undefined, { numeric: true }) ||
+          a.pickup.localeCompare(b.pickup)
+        : (a.pickup || '99').localeCompare(b.pickup || '99') ||
+          a.fin.localeCompare(b.fin),
+    );
+  const reviewCount =
+    pendingLong.length +
+    pendingArea.length +
+    unresolved.length +
+    report.warnings.length +
+    unreviewed.filter((m) => m.kind !== 'incomplete').length +
+    issues.length;
+  const detectedOvernight = useMemo(
+    () => (report.date ? buildShutdown(report, report.date, '', '') : []),
+    [report],
+  );
+  const importText = useCallback(
+    (text: string, name: string, date?: string) => {
+      const result = analyze(text, date);
+      airportGeneration.current++;
+      setAirport(null);
+      setAirportError('');
+      setAirportLoading(false);
+      setReport(result);
+      setMoves(makeMoves(result));
+      setFileName(name);
+      setUploadedAt(Date.now());
+      setBoardFilter('all');
+      setSelectedFin(null);
+      setAircraftNotes({});
+      setOvernightSnapshot({
+        rows: [],
+        date: '',
+        dirty: false,
+        generated: false,
+      });
+      setUploadRevision((v) => v + 1);
+      setDecisions({});
+      setHolding({});
+      setEditing(null);
+      setSearch('');
+      setTab('overview');
+      setSourcesOpen(false);
+      setError('');
+      setNotice(
+        `${result.turns.length} aircraft turns analyzed. Review the proposed moves before issuing the sheet.`,
+      );
+      return result;
+    },
+    [
+      setReport,
+      setMoves,
+      setFileName,
+      setUploadedAt,
+      setBoardFilter,
+      setSelectedFin,
+      setAircraftNotes,
+      setOvernightSnapshot,
+      setUploadRevision,
+      setDecisions,
+      setHolding,
+      setEditing,
+      setSearch,
+      setTab,
+      setSourcesOpen,
+      setError,
+      setNotice,
+      setAirport,
+      setAirportError,
+      setAirportLoading,
+    ],
+  );
+  async function upload(file: File) {
+    setError('');
+    setLoading(true);
+    try {
+      if (file.size > 5 * 1024 * 1024)
+        throw Error('Please use a CSV smaller than 5 MB.');
+      if (!/\.csv$/i.test(file.name))
+        throw Error('Please upload a .csv flight schedule.');
+      importText(await file.text(), file.name, dateOverride || undefined);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unable to read this file.');
+    } finally {
+      setLoading(false);
+      if (fileInput.current) fileInput.current.value = '';
+    }
+  }
+  useEffect(() => {
+    const fresh = (event: PageTransitionEvent) => {
+      if (event.persisted) window.location.reload();
+    };
+    window.addEventListener('pageshow', fresh);
+    return () => window.removeEventListener('pageshow', fresh);
+  }, []);
+  const stateRef = useRef({ report, moves, importText });
+  useEffect(() => {
+    stateRef.current = { report, moves, importText };
+  }, [report, moves, importText]);
+  useEffect(() => {
+    const registry = (document as Document & { modelContext?: Registry })
+      .modelContext;
+    if (!registry?.registerTool) return;
+    const lifecycle = new AbortController();
+    const tools = [
+      {
+        name: 'analyze_flight_csv',
+        title: 'Analyze flight CSV',
+        description:
+          'Replace the current working schedule with a turn-view CSV and display suggested tows. Current edits are replaced.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            csv: { type: 'string' },
+            fileName: { type: 'string' },
+            operatingDate: { type: 'string' },
+          },
+          required: ['csv'],
+          additionalProperties: false,
+        },
+        annotations: { readOnlyHint: false, untrustedContentHint: true },
+        execute: (input: unknown) => {
+          const v = input as Record<string, unknown>;
+          if (
+            !v ||
+            typeof v.csv !== 'string' ||
+            v.csv.length > 5 * 1024 * 1024 ||
+            (v.operatingDate !== undefined &&
+              typeof v.operatingDate !== 'string') ||
+            (v.fileName !== undefined && typeof v.fileName !== 'string')
+          )
+            throw Error(
+              'Provide CSV text and an optional operating date / filename.',
+            );
+          let r: Report | undefined;
+          flushSync(() => {
+            r = stateRef.current.importText(
+              v.csv as string,
+              typeof v.fileName === 'string'
+                ? v.fileName
+                : 'Uploaded schedule.csv',
+              v.operatingDate as string | undefined,
+            );
+          });
+          return {
+            date: r!.date,
+            turns: r!.turns.length,
+            proposedMoves: makeMoves(r!).length,
+            cancelled: r!.cancelled,
+          };
+        },
+      },
+      {
+        name: 'read_tow_plan',
+        title: 'Read tow plan',
+        description:
+          'Read the current tow plan, review status and data issues.',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+          additionalProperties: false,
+        },
+        annotations: { readOnlyHint: true, untrustedContentHint: true },
+        execute: () => ({
+          date: stateRef.current.report.date,
+          moves: stateRef.current.moves,
+          warnings: stateRef.current.report.warnings,
+        }),
+      },
+    ];
+    for (const tool of tools) {
+      try {
+        void Promise.resolve(
+          registry.registerTool(tool, { signal: lifecycle.signal }),
+        ).catch(() => {});
+      } catch {
+        /* Browser support is optional. */
+      }
+    }
+    return () => lifecycle.abort();
+  }, []);
+  function patch(id: string, values: Partial<Move>) {
+    setMoves((ms) => ms.map((m) => (m.id === id ? { ...m, ...values } : m)));
+  }
+  function addManual() {
+    setEditing({
+      id: `manual-${crypto.randomUUID()}`,
+      turnId: '',
+      fin: '',
+      arrFlight: '',
+      depFlight: '',
+      from: '',
+      to: '',
+      pickup: '',
+      release: '',
+      gateOpen: '',
+      actualPickup: '',
+      actualDrop: '',
+      depTime: '',
+      tower: '',
+      kind: 'manual',
+      included: true,
+      reviewed: false,
+      reason: 'Manually added tow move',
+      earliest: null,
+      latest: null,
+      warnings: [],
+    });
+    setEditError('');
+  }
+  function reviewMove(m: Move) {
+    const errors = moveErrors(m, report.date);
+    if (errors.length) {
+      setEditing(m);
+      setEditError(errors.join(' '));
+      return;
+    }
+    patch(m.id, { reviewed: !m.reviewed });
+  }
+  function decideLong(t: Turn, tow: boolean) {
+    try {
+      const added = tow
+        ? longMoves(t, holding[t.id] || '')
+        : t.kind === 'same-area'
+          ? makeMoves({
+              ...report,
+              turns: [
+                {
+                  ...t,
+                  kind: 'gate',
+                  reason: 'Direct same-area tow confirmed during review.',
+                },
+              ],
+            })
+          : [];
+      const timed =
+        airport?.occupancies.length &&
+        (!airport.date || airport.date === report.date)
+          ? applyOccupancyPickups(added, report, airport.occupancies)
+          : added;
+      setMoves((ms) => [...ms.filter((m) => m.turnId !== t.id), ...timed]);
+      setDecisions((ds) => ({
+        ...ds,
+        [t.id]: tow ? 'tow' : t.kind === 'same-area' ? 'direct' : 'stay',
+      }));
+      setError('');
+      setNotice(
+        tow
+          ? `FIN ${t.fin}: added a holding move and return move.`
+          : t.kind === 'same-area'
+            ? `FIN ${t.fin}: direct tow ${t.from} → ${t.to} added.`
+            : `FIN ${t.fin}: marked to stay at gate ${t.from}.`,
+      );
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+  function saveEdit(e: React.SyntheticEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!editing) return;
+    const errors = moveErrors(editing, report.date);
+    if (errors.length) {
+      setEditError(errors.join(' '));
+      return;
+    }
+    const creating = !moves.some((m) => m.id === editing.id),
+      normalize =
+        editing.kind === 'long' ||
+        editing.kind === 'same-area' ||
+        editing.kind === 'manual'
+          ? towLocation
+          : gate;
+    const saved = {
+      ...editing,
+      from: normalize(editing.from),
+      to: normalize(editing.to),
+      reviewed: true,
+    };
+    setMoves((ms) =>
+      creating
+        ? [...ms, saved]
+        : ms.map((m) => (m.id === saved.id ? saved : m)),
+    );
+    setEditing(null);
+    setEditError('');
+    setNotice(
+      `FIN ${editing.fin}: ${creating ? 'manual tow added' : 'move saved and reviewed'}.`,
+    );
+  }
+  function download() {
+    const data = exportCSV(report, selected, draft);
+    const url = URL.createObjectURL(
+      new Blob([data], { type: 'text/csv;charset=utf-8;' }),
+    );
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tow-sheet-${report.station}-${report.date}${draft ? '-DRAFT' : ''}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setNotice(`${draft ? 'Draft' : 'Reviewed'} tow sheet downloaded.`);
+  }
+  function print() {
+    document.body.dataset.printReport = 'tow';
+    flushSync(() => setTab('sheet'));
+    window.print();
+  }
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(''), 6000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+  useEffect(() => {
+    document.body.dataset.printReport = tab === 'shutdown' ? 'shutdown' : 'tow';
+    const prepare = () => {
+      document.body.dataset.printReport =
+        tab === 'shutdown' ? 'shutdown' : 'tow';
+    };
+    window.addEventListener('beforeprint', prepare);
+    return () => window.removeEventListener('beforeprint', prepare);
+  }, [tab]);
+  const flightCell = (flight: string, time: number | null) => (
+    <>
+      <span>{shortFlight(flight) || '—'}</span>
+      <small>{timeLabel(time, report.date)}</small>
+    </>
+  );
+  return (
+    <SidebarProvider
+      className={`operations-shell ${navCollapsed ? 'nav-collapsed' : ''}`}
+    >
+      <a href="#workspace" className="skip-link">
+        Skip to workspace
+      </a>
+      <ConsoleNav
+        tab={tab}
+        go={go}
+        reviewCount={reviewCount}
+        gateCount={mismatches.length}
+        overnightCount={
+          overnightSnapshot.rows.filter((r) => !r.reviewed || shutdownErrors(r).length > 0 || r.requestStatus === 'pending').length + shutdownPlanErrors(overnightSnapshot.rows).length + (overnightSnapshot.dirty ? 1 : 0)
+        }
+        towCount={selected.length}
+        collapsed={navCollapsed}
+        toggle={() => setNavCollapsed((v) => !v)}
+      />
+      <div className="console-main">
+        <StationHeader
+          station={report.station}
+          date={report.date || airport?.date || ''}
+          uploadedAt={uploadedAt}
+          turns={report.turns.length}
+          tows={selected.length}
+          actions={reviewCount}
+          airportLoaded={!!airport}
+          dateMismatch={
+            !!airport?.date && !!report.date && airport.date !== report.date
+          }
+          onFiles={() => setSourcesOpen(true)}
+          search={
+            <AircraftSearch
+              report={report}
+              moves={moves}
+              overnight={overnightSnapshot}
+              onFin={setSelectedFin}
+            />
+          }
+        />
+        <main id="workspace" tabIndex={-1}>
+          <div className={`page-heading no-print${tab === 'occupancy' ? ' is-compact' : ''}`}>
+            <div className="heading-copy">
+              <div className="eyebrow">{report.station} / OPERATING PLAN</div>
+              <div className="title-line">
+                <h1>
+                  {
+                    (
+                      {
+                        overview: 'Operations Overview',
+                        moves: 'Tow Plan',
+                        schedule: 'Flight Schedule',
+                        sheet: 'Reports / Outputs',
+                        mismatch: 'Gate Verification',
+                        occupancy: 'Gate Timeline',
+                        shutdown: 'Overnight Plan',
+                        review: 'Review & Resolve',
+                      } as Record<string, string>
+                    )[tab]
+                  }
+                </h1>
+                <Badge
+                  variant="outline"
+                  className={`plan-status ${!fileName ? 'is-new' : draft ? 'is-draft' : 'is-ready'}`}
+                >
+                  {!fileName
+                    ? airport
+                      ? 'Airport plan loaded'
+                      : 'No plan loaded'
+                    : draft
+                      ? 'Draft tow plan'
+                      : 'Tow plan ready'}
+                </Badge>
+              </div>
+              <p className="section-subtitle">
+                {tab === 'mismatch'
+                  ? 'Compare Jazz turn-view gates with airport assignments.'
+                  : tab === 'occupancy'
+                    ? 'Airport gate occupancy from the daily planning workbook.'
+                    : tab === 'shutdown'
+                    ? 'Aircraft positions and maintenance requirements for the night.'
+                    : tab === 'review'
+                      ? 'Resolve operational decisions before issuing the plan.'
+                      : tab === 'overview'
+                        ? 'The operating picture, with exceptions first.'
+                        : 'Aircraft movements · All schedule times local'}
+              </p>
+            </div>
+          </div>
+          <Sheet open={sourcesOpen} onOpenChange={setSourcesOpen}>
+            <SheetContent className="edit-sheet source-manager">
+              <SheetHeader>
+                <SheetTitle>Source files</SheetTitle>
+                <SheetDescription>
+                  Manage the operating day’s source data. Replacing the schedule
+                  resets working edits.
+                </SheetDescription>
+              </SheetHeader>
+              {error && (
+                <p role="alert" className="message error">
+                  {error}
+                </p>
+              )}
+              <section
+                className={`upload-panel ${dragging ? 'dragging' : ''}`}
+                aria-label="Upload flight schedule"
+              >
+                <div className="source-heading">
+                  <span>
+                    <FileSpreadsheet size={15} /> FLIGHT SCHEDULE
+                  </span>
+                  <Popover>
+                    <PopoverTrigger
+                      className="source-options"
+                      aria-label="Schedule details and upload date"
+                    >
+                      <Settings2 size={16} />
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="source-popover">
+                      <PopoverTitle>Schedule details</PopoverTitle>
+                      <PopoverDescription>
+                        Uploads are processed in your browser. Edits last for
+                        this session.
+                      </PopoverDescription>
+                      <p className="source-full-name">{fileName}</p>
+                      <p>
+                        {report.turns.length} aircraft turns ·{' '}
+                        {report.cancelled} cancelled entries skipped
+                        {report.duplicates > 0
+                          ? ` · ${report.duplicates} duplicates skipped`
+                          : ''}
+                      </p>
+                      <label htmlFor="upload-date-override">
+                        Upload date override
+                        <Input
+                          id="upload-date-override"
+                          type="date"
+                          value={dateOverride}
+                          onChange={(e) => setDateOverride(e.target.value)}
+                        />
+                      </label>
+                      <p className="muted">
+                        Leave blank to use the date in the CSV.
+                      </p>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div className="source-body">
+                  <div className="file-description">
+                    <strong title={fileName}>
+                      {fileName || 'No schedule uploaded'}
+                    </strong>
+                    <span>
+                      {dragging
+                        ? 'Drop to load this schedule'
+                        : !fileName
+                          ? 'Start with a turn-view CSV'
+                          : report.turns.length + ' aircraft turns loaded'}
+                    </span>
+                  </div>
+                  <Button
+                    className="button upload-button"
+                    variant="outline"
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setDragging(true);
+                    }}
+                    onDragLeave={(e) => {
+                      if (
+                        !e.currentTarget.contains(
+                          e.relatedTarget as Node | null,
+                        )
+                      )
+                        setDragging(false);
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setDragging(false);
+                      if (e.dataTransfer.files[0])
+                        void upload(e.dataTransfer.files[0]);
+                    }}
+                    onClick={() => fileInput.current?.click()}
+                    disabled={loading}
+                  >
+                    <Upload size={16} />
+                    {loading ? 'Reading…' : 'Upload CSV'}
+                  </Button>
+                </div>
+              </section>
+              <section className="source-airport">
+                <h3>AIRPORT PLAN</h3>
+                <strong>{airport?.name || 'No airport workbook loaded'}</strong>
+                <p>
+                  {airport
+                    ? `${airport.assignments.length} assignments · ${airport.date || 'Report date unavailable'}`
+                    : 'Upload the daily airport planning workbook to verify gates or view occupancy.'}
+                </p>
+                <Button
+                  variant="outline"
+                  className="button"
+                  disabled={airportLoading}
+                  onClick={() => airportInput.current?.click()}
+                >
+                  {airportLoading
+                    ? 'Reading workbook…'
+                    : airport
+                      ? 'Replace airport plan'
+                      : 'Upload airport plan'}
+                </Button>
+                {airportError && (
+                  <p role="alert" className="warning-text">
+                    {airportError}
+                  </p>
+                )}
+              </section>
+              {airport?.date && airport.date !== report.date && (
+                <div className="source-date-warning">
+                  <AlertTriangle size={18} />
+                  <div>
+                    <strong>Source dates differ</strong>
+                    <p>
+                      Turn schedule: {report.date}
+                      <br />
+                      Airport plan: {airport.date}
+                    </p>
+                  </div>
+                </div>
+              )}
+              <p className="source-session-note">
+                Files stay in this browser session. Download reports before
+                refreshing or closing.
+              </p>
+            </SheetContent>
+          </Sheet>
+          <input
+            ref={fileInput}
+            hidden
+            type="file"
+            accept=".csv,text/csv"
+            onChange={(e) => {
+              if (e.target.files?.[0]) void upload(e.target.files[0]);
+            }}
+          />
+          <input
+            hidden
+            ref={airportInput}
+            type="file"
+            accept=".xlsx"
+            onChange={(e) => {
+              if (e.target.files?.[0]) void uploadAirport(e.target.files[0]);
+            }}
+          />
+          {loading && (
+            <output className="analysis-progress no-print">
+              <span className="analysis-pulse" />
+              <div>
+                <strong>Analyzing operating plan…</strong>
+                <p>
+                  Reading aircraft turns and calculating proposed movements.
+                </p>
+              </div>
+            </output>
+          )}
+          {airport?.date &&
+            report.date &&
+            airport.date !== report.date &&
+            tab !== 'mismatch' &&
+            tab !== 'occupancy' && (
+              <button
+                className="global-source-warning no-print"
+                onClick={() => go('mismatch')}
+              >
+                <AlertTriangle size={16} />
+                <span>
+                  Source dates differ: turn schedule {report.date} / airport
+                  plan {airport.date}
+                </span>
+                <span>
+                  Check files <ArrowRight size={14} />
+                </span>
+              </button>
+            )}
+          {error && (
+            <div role="alert" className="message error no-print">
+              <AlertTriangle size={18} />
+              {error}
+              <button aria-label="Dismiss error" onClick={() => setError('')}>
+                <X size={16} />
+              </button>
+            </div>
+          )}
+          {issues.map((issue) => (
+            <div role="alert" key={issue} className="message error no-print">
+              <AlertTriangle size={18} />
+              {issue}
+            </div>
+          ))}
+          {notice && (
+            <output className="message notice toast no-print">
+              <CheckCircle2 size={17} />
+              {notice}
+              <button aria-label="Dismiss notice" onClick={() => setNotice('')}>
+                <X size={16} />
+              </button>
+            </output>
+          )}
+          {!fileName && tab !== 'occupancy' && tab !== 'mismatch' ? (
+            <Card className="session-empty no-print">
+              <CardContent>
+                <FileSpreadsheet size={34} />
+                <h2>Start a new operating day</h2>
+                <p>
+                  Upload your flight schedule to plan tows and prepare the
+                  overnight shutdown report, or open the gate timeline to
+                  visualize an airport plan.
+                </p>
+                <Button
+                  className="button primary"
+                  onClick={() => fileInput.current?.click()}
+                  disabled={loading}
+                >
+                  <Upload size={17} />
+                  Upload flight schedule
+                </Button>
+                <Button
+                  className="button"
+                  variant="outline"
+                  onClick={() => go('occupancy')}
+                >
+                  Visualize airport gate plan
+                </Button>
+                <small>
+                  Every new session starts empty. Download your reports before
+                  leaving.
+                </small>
+              </CardContent>
+            </Card>
+          ) : !fileName ? (
+            tab === 'occupancy' ? (
+              <GateOccupancy
+                airport={airport}
+                date={airport?.date || ''}
+                loading={airportLoading}
+                error={airportError}
+                upload={() => airportInput.current?.click()}
+              />
+            ) : (
+              <GateVerification
+                airport={airport}
+                checks={gateChecks}
+                date={report.date}
+                loading={airportLoading}
+                error={airportError}
+                upload={() => airportInput.current?.click()}
+                onFin={setSelectedFin}
+              />
+            )
+          ) : (
+            <>
+              {tab === 'moves' && (
+                <ToggleGroup
+                  className="status-strip no-print"
+                  aria-label="Filter tow board by status"
+                  value={[boardFilter]}
+                  onValueChange={(values) => {
+                    setBoardFilter(
+                      (values[0] || 'all') as
+                        | BoardFilter
+                        | 'ready'
+                        | 'excluded',
+                    );
+                    go('moves');
+                  }}
+                >
+                  {(
+                    [
+                      { id: 'all', label: 'Total tows', Icon: MoveRight },
+                      {
+                        id: 'review',
+                        label: 'Awaiting review',
+                        Icon: ListChecks,
+                      },
+                      { id: 'ready', label: 'Ready', Icon: Check },
+                      { id: 'progress', label: 'In progress', Icon: Clock3 },
+                      {
+                        id: 'completed',
+                        label: 'Completed',
+                        Icon: CheckCircle2,
+                      },
+                      { id: 'excluded', label: 'Excluded', Icon: X },
+                    ] as const
+                  ).map(({ id, label, Icon }) => (
+                    <ToggleGroupItem
+                      value={id}
+                      key={id}
+                      className={`status-tile status-${id}`}
+                    >
+                      <Icon size={17} />
+                      <span>{label}</span>
+                      <strong>
+                        {(id === 'all'
+                          ? moves.length
+                          : moves.filter(
+                              (m) => towStatus(m, report.date) === id,
+                            ).length
+                        )
+                          .toString()
+                          .padStart(2, '0')}
+                      </strong>
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
+              )}
+              <Tabs
+                value={tab}
+                onValueChange={(value) => go(String(value))}
+                className="workspace-tabs"
+              >
+                <div className="workspace-toolbar no-print">
+                  {['moves', 'schedule', 'sheet'].includes(tab) && (
+                    <TabsList variant="line">
+                      <TabsTrigger value="moves">Tow plan</TabsTrigger>
+                      <TabsTrigger value="schedule">
+                        Flight schedule
+                      </TabsTrigger>
+                      <TabsTrigger value="sheet">Printable sheet</TabsTrigger>
+                    </TabsList>
+                  )}
+                  {['moves', 'schedule', 'sheet'].includes(tab) && (
+                    <div className="actions">
+                      <Button
+                        className="button"
+                        variant="outline"
+                        onClick={addManual}
+                      >
+                        <Plus size={16} />
+                        Add tow
+                      </Button>
+                      <Button
+                        className="button"
+                        variant="outline"
+                        onClick={download}
+                        disabled={!selected.length}
+                      >
+                        <Download size={16} />
+                        Export CSV
+                      </Button>
+                      <Button
+                        className="button"
+                        variant="outline"
+                        onClick={print}
+                        disabled={!selected.length}
+                      >
+                        <Printer size={16} />
+                        Print sheet
+                      </Button>
+                    </div>
+                  )}
+                </div>
+                <TabsContent value="overview" className="no-print">
+                  <OperationsOverview
+                    report={report}
+                    moves={moves}
+                    pending={[...pendingArea, ...pendingLong]}
+                    reviewCount={reviewCount}
+                    gateChecks={gateChecks}
+                    airportLoaded={!!airport}
+                    overnight={overnightSnapshot}
+                    overnightCount={
+                      overnightSnapshot.generated
+                        ? overnightSnapshot.rows.length
+                        : detectedOvernight.length
+                    }
+                    draft={draft}
+                    go={go}
+                    onFin={setSelectedFin}
+                  />
+                </TabsContent>
+                <TabsContent value="moves" className="no-print">
+                  <section className="panel">
+                    <div className="panel-heading">
+                      <div>
+                        <h2>
+                          {boardFilter === 'all'
+                            ? 'Aircraft movements'
+                            : statusNames[boardFilter]}{' '}
+                          <span className="table-count">{filtered.length}</span>
+                        </h2>
+                        <p className="section-subtitle">
+                          {selected.length} included on sheet ·{' '}
+                          {selected.length - unreviewed.length} reviewed
+                        </p>
+                      </div>
+                      <div className="tow-view-controls">
+                        <Tabs
+                          value={towView}
+                          onValueChange={(v) => setTowView(String(v))}
+                        >
+                          <TabsList aria-label="Tow plan view">
+                            <TabsTrigger value="timeline">Timeline</TabsTrigger>
+                            <TabsTrigger value="table">Table</TabsTrigger>
+                          </TabsList>
+                        </Tabs>
+                        <label className="sort-control">
+                          Sort
+                          <select
+                            value={towSort}
+                            onChange={(e) => setTowSort(e.target.value)}
+                          >
+                            <option value="pickup">Pickup time</option>
+                            <option value="fin">FIN</option>
+                          </select>
+                        </label>
+                        <div className="search-box">
+                          <Search size={16} />
+                          <Input
+                            aria-label="Search tow moves"
+                            placeholder="Find aircraft, flight or gate"
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    {unreviewed.length > 0 && (
+                      <div className="inline-note">
+                        <Info size={16} />
+                        <span>
+                          Review each move before issuing. BSE locations are
+                          inferred from overnight turns.
+                        </span>
+                      </div>
+                    )}
+                    {towView === 'timeline' ? (
+                      <TowTimeline
+                        report={report}
+                        moves={filtered}
+                        pending={
+                          boardFilter === 'all' || boardFilter === 'review'
+                            ? [...pendingArea, ...pendingLong].filter((t) =>
+                                `${t.fin} ${t.arrFlight} ${t.depFlight} ${t.from} ${t.to}`
+                                  .toLowerCase()
+                                  .includes(search.toLowerCase()),
+                              )
+                            : []
+                        }
+                        selectedFin={selectedFin}
+                        onFin={setSelectedFin}
+                        onMove={(m) => {
+                          setEditing({ ...m });
+                          setEditError('');
+                        }}
+                        onReview={() => go('review')}
+                      />
+                    ) : (
+                      <>
+                        {' '}
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              {[
+                                'USE',
+                                'FIN #',
+                                'ARRIVAL',
+                                'TOW ROUTE',
+                                'SKED PICKUP',
+                                'GATE OPENS',
+                                'DEPARTURE',
+                                'GROUND',
+                                'STATUS',
+                                'REASON',
+                                'REVIEW',
+                              ].map((h) => (
+                                <TableHead key={h}>{h}</TableHead>
+                              ))}
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {filtered.map((m) => {
+                              const turn = report.turns.find(
+                                (t) => t.id === m.turnId,
+                              );
+                              const errs = moveErrors(m, report.date);
+                              return (
+                                <TableRow
+                                  key={m.id}
+                                  className={!m.included ? 'excluded' : ''}
+                                >
+                                  <TableCell>
+                                    <Checkbox
+                                      aria-label={`Include FIN ${m.fin} ${m.from} to ${m.to}`}
+                                      checked={m.included}
+                                      onCheckedChange={(v) =>
+                                        patch(m.id, { included: !!v })
+                                      }
+                                    />
+                                  </TableCell>
+                                  <TableCell className="fin">
+                                    <Button
+                                      variant="link"
+                                      className="fin-link"
+                                      onClick={() => setSelectedFin(m.fin)}
+                                    >
+                                      {m.fin || '—'}
+                                    </Button>
+                                  </TableCell>
+                                  <TableCell className="flight-cell">
+                                    {flightCell(
+                                      m.arrFlight,
+                                      m.arrFlight
+                                        ? (turn?.arrival ?? null)
+                                        : null,
+                                    )}
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="tow-route">
+                                      <span
+                                        className={
+                                          m.from === 'BSE' ? 'gate bse' : 'gate'
+                                        }
+                                      >
+                                        {m.from || '?'}
+                                      </span>
+                                      <ArrowRight size={15} />
+                                      <span
+                                        className={
+                                          m.to === 'BSE' ? 'gate bse' : 'gate'
+                                        }
+                                      >
+                                        {m.to || '?'}
+                                      </span>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Button
+                                      variant="ghost"
+                                      className="pickup-edit"
+                                      onClick={() => {
+                                        setEditing({ ...m });
+                                        setEditError('');
+                                      }}
+                                      aria-label={`Edit FIN ${m.fin} pickup ${m.pickup || 'unset'}`}
+                                    >
+                                      {m.pickup || 'Set time'}
+                                      <Pencil size={12} />
+                                    </Button>
+                                  </TableCell>
+                                  <TableCell className="mono">
+                                    {m.gateOpen || '—'}
+                                  </TableCell>
+                                  <TableCell className="flight-cell">
+                                    <span>
+                                      {shortFlight(m.depFlight) || '—'}
+                                    </span>
+                                    <small>
+                                      {m.depTime || 'No departure today'}
+                                    </small>
+                                  </TableCell>
+                                  <TableCell className="mono">
+                                    {turn?.duration !== null &&
+                                    turn?.duration !== undefined
+                                      ? `${Math.floor(turn.duration / 60)}h ${turn.duration % 60}m`
+                                      : '—'}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Badge
+                                      variant="outline"
+                                      className={`execution-status execution-${towStatus(m, report.date)}`}
+                                    >
+                                      {statusNames[towStatus(m, report.date)]}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Badge
+                                      variant="outline"
+                                      className={`reason-badge ${m.kind.startsWith('bse') ? 'blue' : m.kind === 'long' || m.kind === 'same-area' || m.kind === 'incomplete' ? 'amber' : ''}`}
+                                    >
+                                      {kindLabel[m.kind]}
+                                    </Badge>
+                                    {(m.warnings.length > 0 ||
+                                      errs.length > 0) && (
+                                      <span
+                                        className="row-warning"
+                                        title={[...m.warnings, ...errs].join(
+                                          ' ',
+                                        )}
+                                      >
+                                        <AlertTriangle size={13} /> Check
+                                        details
+                                      </span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="row-actions">
+                                      <Button
+                                        variant="outline"
+                                        className={`review-button ${m.reviewed ? 'done' : ''}`}
+                                        onClick={() => reviewMove(m)}
+                                        aria-label={`${m.reviewed ? 'Undo review' : 'Review'} FIN ${m.fin} ${m.from} to ${m.to}`}
+                                      >
+                                        {m.reviewed ? (
+                                          <Check size={15} />
+                                        ) : (
+                                          <CheckCircle2 size={15} />
+                                        )}{' '}
+                                        {m.reviewed ? 'Reviewed' : 'Review'}
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon-sm"
+                                        className="icon-button"
+                                        aria-label={`Edit FIN ${m.fin} ${m.from} to ${m.to}`}
+                                        onClick={() => {
+                                          setEditing({ ...m });
+                                          setEditError('');
+                                        }}
+                                      >
+                                        <Pencil size={15} />
+                                      </Button>
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                        {!filtered.length && (
+                          <div className="empty-state">
+                            {moves.length
+                              ? 'No moves match this status and search.'
+                              : 'No tow moves identified for this schedule.'}
+                          </div>
+                        )}
+                      </>
+                    )}
+                    <div className="panel-footer">
+                      <div className="review-progress">
+                        <CheckCircle2 size={16} />
+                        <span>
+                          {selected.length - unreviewed.length} of{' '}
+                          {selected.length} moves reviewed
+                        </span>
+                        <Progress
+                          aria-label="Included moves reviewed"
+                          value={
+                            selected.length
+                              ? Math.round(
+                                  ((selected.length - unreviewed.length) /
+                                    selected.length) *
+                                    100,
+                                )
+                              : 0
+                          }
+                        />
+                      </div>
+                      <span>All times local · HH:MM</span>
+                    </div>
+                  </section>
+                </TabsContent>
+                <TabsContent value="review" className="no-print">
+                  <ReviewWorkflow
+                    report={report}
+                    moves={moves}
+                    decisions={decisions}
+                    holding={holding}
+                    issues={issues}
+                    reviewCount={reviewCount}
+                    draft={draft}
+                    gateConflicts={mismatches.length}
+                    overnight={overnightSnapshot}
+                    onFin={setSelectedFin}
+                    onHolding={(id, value) =>
+                      setHolding((h) => ({ ...h, [id]: value }))
+                    }
+                    onDecision={decideLong}
+                    onRevisit={(t) => {
+                      setDecisions((ds) => {
+                        const next = { ...ds };
+                        delete next[t.id];
+                        return next;
+                      });
+                      setMoves((ms) => ms.filter((m) => m.turnId !== t.id));
+                    }}
+                    onEdit={(m) => {
+                      setEditing({ ...m });
+                      setEditError('');
+                    }}
+                    onReview={reviewMove}
+                    onExclude={(m) =>
+                      patch(m.id, { reviewed: true, included: false })
+                    }
+                    go={go}
+                  />
+                </TabsContent>
+                <TabsContent
+                  value="schedule"
+                  className="schedule-panel no-print"
+                >
+                  <section className="panel">
+                    <div className="panel-heading">
+                      <h2>Flight schedule</h2>
+                      <span className="muted">
+                        {report.turns.length} active turns · gate prefixes
+                        normalized
+                      </span>
+                    </div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          {[
+                            'FIN #',
+                            'ORIGIN',
+                            'ARR FLIGHT',
+                            'ARRIVAL (SOURCE)',
+                            'ARR GATE',
+                            'DEP GATE',
+                            'DEP FLIGHT',
+                            'DEPARTURE (SOURCE)',
+                            'DESTINATION',
+                            'RESULT',
+                          ].map((h) => (
+                            <TableHead key={h}>{h}</TableHead>
+                          ))}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {report.turns.map((t) => (
+                          <TableRow key={t.id}>
+                            <TableCell className="fin">
+                              <Button
+                                variant="link"
+                                className="fin-link"
+                                onClick={() => setSelectedFin(t.fin)}
+                              >
+                                {t.fin || '—'}
+                              </Button>
+                            </TableCell>
+                            <TableCell>{t.origin}</TableCell>
+                            <TableCell>
+                              {shortFlight(t.arrFlight) || '—'}
+                            </TableCell>
+                            <TableCell>{t.arrLabel || '—'}</TableCell>
+                            <TableCell>{t.from || '—'}</TableCell>
+                            <TableCell>{t.to || '—'}</TableCell>
+                            <TableCell>
+                              {shortFlight(t.depFlight) || '—'}
+                            </TableCell>
+                            <TableCell>{t.depLabel || '—'}</TableCell>
+                            <TableCell>{t.destination}</TableCell>
+                            <TableCell>
+                              <Badge
+                                variant="outline"
+                                className={`reason-badge ${t.kind === 'none' ? 'neutral' : ''}`}
+                              >
+                                {kindLabel[t.kind]}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                    <div className="panel-footer">
+                      TOD is departure and TOA is arrival. A / E / S mean
+                      actual, estimated, and scheduled. An actual departure in
+                      column L means no tow is required.
+                    </div>
+                  </section>
+                </TabsContent>
+                <TabsContent value="sheet" keepMounted className="sheet-tab">
+                  <div className="output-readiness no-print">
+                    <div>
+                      <strong
+                        className={draft ? 'text-warning' : 'text-success'}
+                      >
+                        {draft
+                          ? 'Draft preview — review required'
+                          : 'Tow sheet ready for output'}
+                      </strong>
+                      <p>
+                        {draft
+                          ? `${reviewCount} review items remain. Draft export and printing are available for planning.`
+                          : 'All included movements satisfy the existing tow review checks.'}
+                      </p>
+                    </div>
+                    <Button variant="outline" onClick={() => go('review')}>
+                      {draft
+                        ? 'Resolve remaining items'
+                        : 'View review summary'}
+                      <ArrowRight size={14} />
+                    </Button>
+                  </div>
+                  <section className="paper">
+                    <div className="paper-heading">
+                      <div className="paper-title">TOW SHEET</div>
+                      <div className="paper-brand">
+                        JazzTow{' '}
+                        <small>{report.station} · GROUND OPERATIONS</small>
+                      </div>
+                      <div className="paper-date">
+                        <span>DATE</span>
+                        <strong>{formatDate(report.date).toUpperCase()}</strong>
+                      </div>
+                    </div>
+                    <div
+                      className={`sheet-status ${draft ? 'draft' : 'ready'}`}
+                    >
+                      {draft ? 'DRAFT — REVIEW REQUIRED' : 'REVIEWED TOW SHEET'}
+                      <span>
+                        {draft
+                          ? `${unreviewed.length} moves to review · ${pendingLong.length + pendingArea.length} routing decisions pending${unresolved.length ? ` · ${unresolved.length} incomplete turns` : ''}${report.warnings.length ? ` · ${report.warnings.length} import issues` : ''}${issues.length ? ` · ${issues.length} paired-tow issues` : ''}`
+                          : `${selected.length} moves · All times local`}
+                      </span>
+                    </div>
+                    <Table className="tower-table">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>#</TableHead>
+                          {sheetHeaders.map((h) => (
+                            <TableHead key={h}>{h}</TableHead>
+                          ))}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {selected.map((m, i) => (
+                          <TableRow key={m.id}>
+                            <TableCell>{i + 1}</TableCell>
+                            {sheetValues(m).map((v, j) => (
+                              <TableCell key={j}>{v}</TableCell>
+                            ))}
+                          </TableRow>
+                        ))}
+                        {Array.from(
+                          { length: Math.max(2, 10 - selected.length) },
+                          (_, i) => (
+                            <TableRow key={`blank-${i}`}>
+                              <TableCell>{selected.length + i + 1}</TableCell>
+                              {sheetHeaders.map((_, j) => (
+                                <TableCell key={j}>&nbsp;</TableCell>
+                              ))}
+                            </TableRow>
+                          ),
+                        )}
+                      </TableBody>
+                    </Table>
+                    {Object.entries(aircraftNotes).some(
+                      ([fin, note]) =>
+                        note.trim() && selected.some((m) => m.fin === fin),
+                    ) && (
+                      <section className="paper-notes">
+                        <h3>OPERATIONAL NOTES</h3>
+                        {Object.entries(aircraftNotes)
+                          .filter(
+                            ([fin, note]) =>
+                              note.trim() &&
+                              selected.some((m) => m.fin === fin),
+                          )
+                          .map(([fin, note]) => (
+                            <p key={fin}>
+                              <strong>FIN {fin}</strong> {note}
+                            </p>
+                          ))}
+                      </section>
+                    )}
+                    <div className="paper-footer">
+                      {report.station} · {report.date} · Local time
+                      <ReportTimestamp station={report.station} />
+                      <span>Prepared with JazzTow</span>
+                    </div>
+                  </section>
+                  <p className="sheet-help no-print">
+                    TIME GATE OPENS AT is filled from airport occupancy when a
+                    departure tow is timed off the previous aircraft. Use the
+                    pencil beside a move to edit release, gate-open, actual
+                    pickup/drop, and tower fields. Print to paper or choose
+                    “Save as PDF”.
+                  </p>
+                </TabsContent>
+                <TabsContent value="mismatch" className="no-print">
+                  <GateVerification
+                    airport={airport}
+                    checks={gateChecks}
+                    date={report.date}
+                    loading={airportLoading}
+                    error={airportError}
+                    upload={() => airportInput.current?.click()}
+                    onFin={setSelectedFin}
+                  />
+                </TabsContent>
+                <TabsContent value="occupancy" className="no-print">
+                  <GateOccupancy
+                    airport={airport}
+                    date={report.date || airport?.date || ''}
+                    loading={airportLoading}
+                    error={airportError}
+                    upload={() => airportInput.current?.click()}
+                  />
+                </TabsContent>
+                <TabsContent
+                  value="shutdown"
+                  keepMounted
+                  className="shutdown-tab"
+                >
+                  <ShutdownPlanner
+                    key={uploadRevision}
+                    report={report}
+                    onSnapshot={setOvernightSnapshot}
+                    onFin={setSelectedFin}
+                  />
+                </TabsContent>
+              </Tabs>
+            </>
+          )}
+          <footer className="app-footer no-print">
+            <span>JazzTow · {report.station} operations</span>
+            <span>
+              Review aircraft location and operational readiness before issuing.
+            </span>
+          </footer>
+        </main>
+        <Sheet
+          open={!!editing}
+          onOpenChange={(open) => {
+            if (!open) setEditing(null);
+          }}
+        >
+          <SheetContent className="edit-sheet">
+            <SheetHeader>
+              <SheetTitle>
+                {isNewManual
+                  ? 'Add tow move'
+                  : `Edit tow · FIN ${editing?.fin || 'unassigned'}`}
+              </SheetTitle>
+              <SheetDescription>
+                {isNewManual
+                  ? 'Enter the required route and pickup details.'
+                  : editing?.reason}
+              </SheetDescription>
+            </SheetHeader>
+            {editing && (
+              <form onSubmit={saveEdit} className="edit-form">
+                {editing.kind === 'manual' ? (
+                  <div className="edit-source">
+                    Manual tow move · required fields are marked *
+                  </div>
+                ) : (
+                  <div className="edit-source">
+                    Source:{' '}
+                    {timeLabel(
+                      report.turns.find((t) => t.id === editing.turnId)
+                        ?.arrival ?? null,
+                      report.date,
+                    )}{' '}
+                    arrival ·{' '}
+                    {timeLabel(
+                      report.turns.find((t) => t.id === editing.turnId)
+                        ?.departure ?? null,
+                      report.date,
+                    )}{' '}
+                    departure
+                  </div>
+                )}
+                {editing.warnings.map((w) => (
+                  <p key={w} className="edit-warning">
+                    <AlertTriangle size={15} />
+                    {w}
+                  </p>
+                ))}
+                <div className="edit-grid">
+                  {(
+                    [
+                      ['fin', 'FIN #', 'text'],
+                      ['arrFlight', 'Arrival flight', 'text'],
+                      ['from', 'Tow from', 'text'],
+                      ['to', 'Tow to', 'text'],
+                      ['pickup', 'Scheduled pickup', 'time'],
+                      ['release', 'Aircraft release', 'time'],
+                      ['gateOpen', 'Gate opens at', 'time'],
+                      ['depFlight', 'Departure flight', 'text'],
+                      ['depTime', 'Departure time', 'time'],
+                      ['actualPickup', 'Actual pickup', 'time'],
+                      ['actualDrop', 'Actual drop', 'time'],
+                      ['tower', 'Tower', 'text'],
+                    ] as const
+                  ).map(([key, label, type]) => {
+                    const required = ['fin', 'from', 'to', 'pickup'].includes(
+                      key,
+                    );
+                    return (
+                      <label key={key} htmlFor={`tow-edit-${key}`}>
+                        {label}
+                        {required ? ' *' : ''}
+                        <Input
+                          id={`tow-edit-${key}`}
+                          type={type}
+                          required={required}
+                          readOnly={
+                            key === 'depTime' && editing.kind !== 'manual'
+                          }
+                          value={editing[key]}
+                          onChange={(e) =>
+                            setEditing({
+                              ...editing,
+                              [key]: e.target.value,
+                              reviewed: false,
+                            })
+                          }
+                        />
+                      </label>
+                    );
+                  })}
+                </div>
+                <label className="check-label" htmlFor="edit-included">
+                  <Checkbox
+                    id="edit-included"
+                    checked={editing.included}
+                    onCheckedChange={(v) =>
+                      setEditing({ ...editing, included: !!v })
+                    }
+                  />
+                  Include on tow sheet
+                </label>
+                {editError && (
+                  <p role="alert" className="warning-text">
+                    {editError}
+                  </p>
+                )}
+                <p className="muted">
+                  Saving confirms this route, timing and any warnings have been
+                  reviewed.
+                </p>
+                <Button type="submit" className="button primary">
+                  <Check size={17} />
+                  {isNewManual ? 'Add tow move' : 'Save & mark reviewed'}
+                </Button>
+              </form>
+            )}
+          </SheetContent>
+        </Sheet>
+        <AircraftDrawer
+          gateChecks={gateChecks}
+          airportLoaded={!!airport}
+          decisions={decisions}
+          go={(page) => {
+            setSelectedFin(null);
+            go(page);
+          }}
+          note={selectedFin ? aircraftNotes[selectedFin] || '' : ''}
+          onNote={(note) => {
+            if (selectedFin)
+              setAircraftNotes((notes) => ({ ...notes, [selectedFin]: note }));
+          }}
+          fin={selectedFin}
+          close={() => setSelectedFin(null)}
+          report={report}
+          moves={moves}
+          overnight={overnightSnapshot}
+          edit={(m) => {
+            setSelectedFin(null);
+            setEditing({ ...m });
+            setEditError('');
+          }}
+        />
+      </div>
+    </SidebarProvider>
+  );
 }
