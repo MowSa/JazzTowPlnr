@@ -1,6 +1,6 @@
 'use client';
 import { shutdownErrors, shutdownPlanErrors } from '@/lib/shutdown';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { flushSync } from 'react-dom';
 import {
   Upload,
@@ -50,12 +50,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from '@/components/ui/sheet';
-import {
-  readAirportWorkbook,
-  compareGates,
-  applyOccupancyPickups,
-  type AirportPlan,
-} from '@/lib/gates';
+import { compareGates, applyOccupancyPickups } from '@/lib/gates';
 import { GateVerification } from '@/components/gate-verification';
 import { GateOccupancy } from '@/components/gate-occupancy';
 import { SidebarProvider } from '@/components/ui/sidebar';
@@ -64,7 +59,6 @@ import {
   ConsoleNav,
   StationHeader,
   AircraftDrawer,
-  type OvernightSnapshot,
 } from '@/components/operations-console';
 import { towStatus, statusNames, type BoardFilter } from '@/lib/console';
 import { ReportTimestamp } from '@/components/report-timestamp';
@@ -75,7 +69,6 @@ import { OperationsOverview } from '@/components/operations-overview';
 import { buildShutdown } from '@/lib/shutdown';
 import ShutdownPlanner from '@/components/shutdown-planner';
 import {
-  analyze,
   makeMoves,
   longMoves,
   moveErrors,
@@ -84,20 +77,12 @@ import {
   sheetValues,
   exportCSV,
   planIssues,
-  gate,
-  towLocation,
-  type Report,
   type Turn,
   type Move,
 } from '@/lib/tows';
-const initialReport: Report = {
-  date: '',
-  station: 'YUL',
-  turns: [],
-  cancelled: 0,
-  duplicates: 0,
-  warnings: [],
-};
+import TowMoveEditor, { commitEditedMove } from '@/components/tow-move-editor';
+import { usePlannerSession } from '@/hooks/use-planner-session';
+
 const kindLabel = {
   'same-area': 'Same-area',
   gate: 'Gate change',
@@ -118,101 +103,64 @@ const formatDate = (date: string) =>
         year: 'numeric',
         timeZone: 'UTC',
       });
-type Registry = {
-  registerTool: (
-    tool: {
-      name: string;
-      title: string;
-      description: string;
-      inputSchema: object;
-      annotations: object;
-      execute: (v: unknown) => unknown;
-    },
-    options: { signal: AbortSignal },
-  ) => void | Promise<void>;
-};
 
 export default function Home() {
-  const [uploadedAt, setUploadedAt] = useState<number | null>(null),
-    [boardFilter, setBoardFilter] = useState<
-      BoardFilter | 'ready' | 'excluded'
-    >('all'),
-    [selectedFin, setSelectedFin] = useState<string | null>(null);
-  const [overnightSnapshot, setOvernightSnapshot] = useState<OvernightSnapshot>(
-    { rows: [], date: '', dirty: false, generated: false },
-  );
-  function go(value: string) {
-    setTab(value);
-  }
-  const [report, setReport] = useState<Report>(initialReport),
-    [moves, setMoves] = useState<Move[]>([]);
-  const [fileName, setFileName] = useState(''),
-    [uploadRevision, setUploadRevision] = useState(0);
-  const [aircraftNotes, setAircraftNotes] = useState<Record<string, string>>(
-    {},
-  );
-  const [towView, setTowView] = useState('timeline'),
-    [towSort, setTowSort] = useState('pickup');
-  const [sourcesOpen, setSourcesOpen] = useState(false),
-    [navCollapsed, setNavCollapsed] = useState(false);
-  const [tab, setTab] = useState('overview'),
-    [search, setSearch] = useState(''),
-    [error, setError] = useState(''),
-    [notice, setNotice] = useState(''),
-    [loading, setLoading] = useState(false),
-    [dragging, setDragging] = useState(false);
-  const [dateOverride, setDateOverride] = useState(''),
-    [decisions, setDecisions] = useState<Record<string, string>>({}),
-    [holding, setHolding] = useState<Record<string, string>>({});
-  const [editing, setEditing] = useState<Move | null>(null),
-    [editError, setEditError] = useState('');
-  const [airport, setAirport] = useState<AirportPlan | null>(null),
-    [airportLoading, setAirportLoading] = useState(false),
-    [airportError, setAirportError] = useState('');
-  const airportInput = useRef<HTMLInputElement>(null),
-    airportGeneration = useRef(0);
+  const {
+    uploadedAt,
+    boardFilter,
+    setBoardFilter,
+    selectedFin,
+    setSelectedFin,
+    overnightSnapshot,
+    setOvernightSnapshot,
+    report,
+    moves,
+    setMoves,
+    fileName,
+    uploadRevision,
+    aircraftNotes,
+    setAircraftNotes,
+    sourcesOpen,
+    setSourcesOpen,
+    tab,
+    setTab,
+    search,
+    setSearch,
+    error,
+    setError,
+    notice,
+    setNotice,
+    loading,
+    dragging,
+    setDragging,
+    dateOverride,
+    setDateOverride,
+    decisions,
+    setDecisions,
+    holding,
+    setHolding,
+    editing,
+    setEditing,
+    editError,
+    setEditError,
+    airport,
+    airportLoading,
+    airportError,
+    airportInput,
+    fileInput,
+    go,
+    upload,
+    uploadAirport,
+    clearDesk,
+  } = usePlannerSession();
+  const [towView, setTowView] = useState('timeline');
+  const [towSort, setTowSort] = useState('pickup');
+  const [navCollapsed, setNavCollapsed] = useState(false);
   const gateChecks = useMemo(
     () => (airport ? compareGates(report, airport, moves) : []),
     [report, airport, moves],
   );
   const mismatches = gateChecks.filter((c) => c.status === 'mismatch');
-  async function uploadAirport(file: File) {
-    const generation = ++airportGeneration.current;
-    setAirportLoading(true);
-    setAirportError('');
-    try {
-      if (!/\.xlsx$/i.test(file.name))
-        throw Error('Upload the airport .xlsx workbook.');
-      if (file.size > 10 * 1024 * 1024)
-        throw Error('Use a daily workbook smaller than 10 MB.');
-      const plan = await readAirportWorkbook(
-        await file.arrayBuffer(),
-        file.name,
-      );
-      if (generation !== airportGeneration.current) return;
-      setAirport(plan);
-      setMoves((ms) => {
-        if (!report.date || (plan.date && plan.date !== report.date)) return ms;
-        return applyOccupancyPickups(ms, report, plan.occupancies);
-      });
-      if (report.date && (!plan.date || plan.date === report.date)) {
-        setNotice(
-          'Airport plan loaded. Departure tow pickups now follow gate occupancy.',
-        );
-      }
-    } catch (e) {
-      if (generation === airportGeneration.current)
-        setAirportError(
-          e instanceof Error
-            ? e.message
-            : 'Could not read the airport workbook.',
-        );
-    } finally {
-      if (generation === airportGeneration.current) setAirportLoading(false);
-      if (airportInput.current) airportInput.current.value = '';
-    }
-  }
-  const fileInput = useRef<HTMLInputElement>(null);
   const selected = useMemo(
     () =>
       moves
@@ -270,171 +218,6 @@ export default function Home() {
     () => (report.date ? buildShutdown(report, report.date, '', '') : []),
     [report],
   );
-  const importText = useCallback(
-    (text: string, name: string, date?: string) => {
-      const result = analyze(text, date);
-      airportGeneration.current++;
-      setAirport(null);
-      setAirportError('');
-      setAirportLoading(false);
-      setReport(result);
-      setMoves(makeMoves(result));
-      setFileName(name);
-      setUploadedAt(Date.now());
-      setBoardFilter('all');
-      setSelectedFin(null);
-      setAircraftNotes({});
-      setOvernightSnapshot({
-        rows: [],
-        date: '',
-        dirty: false,
-        generated: false,
-      });
-      setUploadRevision((v) => v + 1);
-      setDecisions({});
-      setHolding({});
-      setEditing(null);
-      setSearch('');
-      setTab('overview');
-      setSourcesOpen(false);
-      setError('');
-      setNotice(
-        `${result.turns.length} aircraft turns analyzed. Review the proposed moves before issuing the sheet.`,
-      );
-      return result;
-    },
-    [
-      setReport,
-      setMoves,
-      setFileName,
-      setUploadedAt,
-      setBoardFilter,
-      setSelectedFin,
-      setAircraftNotes,
-      setOvernightSnapshot,
-      setUploadRevision,
-      setDecisions,
-      setHolding,
-      setEditing,
-      setSearch,
-      setTab,
-      setSourcesOpen,
-      setError,
-      setNotice,
-      setAirport,
-      setAirportError,
-      setAirportLoading,
-    ],
-  );
-  async function upload(file: File) {
-    setError('');
-    setLoading(true);
-    try {
-      if (file.size > 5 * 1024 * 1024)
-        throw Error('Please use a CSV smaller than 5 MB.');
-      if (!/\.csv$/i.test(file.name))
-        throw Error('Please upload a .csv flight schedule.');
-      importText(await file.text(), file.name, dateOverride || undefined);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unable to read this file.');
-    } finally {
-      setLoading(false);
-      if (fileInput.current) fileInput.current.value = '';
-    }
-  }
-  useEffect(() => {
-    const fresh = (event: PageTransitionEvent) => {
-      if (event.persisted) window.location.reload();
-    };
-    window.addEventListener('pageshow', fresh);
-    return () => window.removeEventListener('pageshow', fresh);
-  }, []);
-  const stateRef = useRef({ report, moves, importText });
-  useEffect(() => {
-    stateRef.current = { report, moves, importText };
-  }, [report, moves, importText]);
-  useEffect(() => {
-    const registry = (document as Document & { modelContext?: Registry })
-      .modelContext;
-    if (!registry?.registerTool) return;
-    const lifecycle = new AbortController();
-    const tools = [
-      {
-        name: 'analyze_flight_csv',
-        title: 'Analyze flight CSV',
-        description:
-          'Replace the current working schedule with a turn-view CSV and display suggested tows. Current edits are replaced.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            csv: { type: 'string' },
-            fileName: { type: 'string' },
-            operatingDate: { type: 'string' },
-          },
-          required: ['csv'],
-          additionalProperties: false,
-        },
-        annotations: { readOnlyHint: false, untrustedContentHint: true },
-        execute: (input: unknown) => {
-          const v = input as Record<string, unknown>;
-          if (
-            !v ||
-            typeof v.csv !== 'string' ||
-            v.csv.length > 5 * 1024 * 1024 ||
-            (v.operatingDate !== undefined &&
-              typeof v.operatingDate !== 'string') ||
-            (v.fileName !== undefined && typeof v.fileName !== 'string')
-          )
-            throw Error(
-              'Provide CSV text and an optional operating date / filename.',
-            );
-          let r: Report | undefined;
-          flushSync(() => {
-            r = stateRef.current.importText(
-              v.csv as string,
-              typeof v.fileName === 'string'
-                ? v.fileName
-                : 'Uploaded schedule.csv',
-              v.operatingDate as string | undefined,
-            );
-          });
-          return {
-            date: r!.date,
-            turns: r!.turns.length,
-            proposedMoves: makeMoves(r!).length,
-            cancelled: r!.cancelled,
-          };
-        },
-      },
-      {
-        name: 'read_tow_plan',
-        title: 'Read tow plan',
-        description:
-          'Read the current tow plan, review status and data issues.',
-        inputSchema: {
-          type: 'object',
-          properties: {},
-          additionalProperties: false,
-        },
-        annotations: { readOnlyHint: true, untrustedContentHint: true },
-        execute: () => ({
-          date: stateRef.current.report.date,
-          moves: stateRef.current.moves,
-          warnings: stateRef.current.report.warnings,
-        }),
-      },
-    ];
-    for (const tool of tools) {
-      try {
-        void Promise.resolve(
-          registry.registerTool(tool, { signal: lifecycle.signal }),
-        ).catch(() => {});
-      } catch {
-        /* Browser support is optional. */
-      }
-    }
-    return () => lifecycle.abort();
-  }, []);
   function patch(id: string, values: Partial<Move>) {
     setMoves((ms) => ms.map((m) => (m.id === id ? { ...m, ...values } : m)));
   }
@@ -514,24 +297,12 @@ export default function Home() {
   function saveEdit(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!editing) return;
-    const errors = moveErrors(editing, report.date);
-    if (errors.length) {
-      setEditError(errors.join(' '));
+    const result = commitEditedMove(editing, moves, report.date);
+    if ('error' in result) {
+      setEditError(result.error);
       return;
     }
-    const creating = !moves.some((m) => m.id === editing.id),
-      normalize =
-        editing.kind === 'long' ||
-        editing.kind === 'same-area' ||
-        editing.kind === 'manual'
-          ? towLocation
-          : gate;
-    const saved = {
-      ...editing,
-      from: normalize(editing.from),
-      to: normalize(editing.to),
-      reviewed: true,
-    };
+    const { saved, creating } = result;
     setMoves((ms) =>
       creating
         ? [...ms, saved]
@@ -560,20 +331,6 @@ export default function Home() {
     flushSync(() => setTab('sheet'));
     window.print();
   }
-  useEffect(() => {
-    if (!notice) return;
-    const timer = setTimeout(() => setNotice(''), 6000);
-    return () => clearTimeout(timer);
-  }, [notice]);
-  useEffect(() => {
-    document.body.dataset.printReport = tab === 'shutdown' ? 'shutdown' : 'tow';
-    const prepare = () => {
-      document.body.dataset.printReport =
-        tab === 'shutdown' ? 'shutdown' : 'tow';
-    };
-    window.addEventListener('beforeprint', prepare);
-    return () => window.removeEventListener('beforeprint', prepare);
-  }, [tab]);
   const flightCell = (flight: string, time: number | null) => (
     <>
       <span>{shortFlight(flight) || '—'}</span>
@@ -593,7 +350,14 @@ export default function Home() {
         reviewCount={reviewCount}
         gateCount={mismatches.length}
         overnightCount={
-          overnightSnapshot.rows.filter((r) => !r.reviewed || shutdownErrors(r).length > 0 || r.requestStatus === 'pending').length + shutdownPlanErrors(overnightSnapshot.rows).length + (overnightSnapshot.dirty ? 1 : 0)
+          overnightSnapshot.rows.filter(
+            (r) =>
+              !r.reviewed ||
+              shutdownErrors(r).length > 0 ||
+              r.requestStatus === 'pending',
+          ).length +
+          shutdownPlanErrors(overnightSnapshot.rows).length +
+          (overnightSnapshot.dirty ? 1 : 0)
         }
         towCount={selected.length}
         collapsed={navCollapsed}
@@ -612,6 +376,11 @@ export default function Home() {
             !!airport?.date && !!report.date && airport.date !== report.date
           }
           onFiles={() => setSourcesOpen(true)}
+          moves={moves}
+          onNextPickup={(fin) => {
+            setSelectedFin(fin);
+            go('moves');
+          }}
           search={
             <AircraftSearch
               report={report}
@@ -622,7 +391,9 @@ export default function Home() {
           }
         />
         <main id="workspace" tabIndex={-1}>
-          <div className={`page-heading no-print${tab === 'occupancy' ? ' is-compact' : ''}`}>
+          <div
+            className={`page-heading no-print${tab === 'occupancy' || tab === 'moves' ? ' is-compact' : ''}`}
+          >
             <div className="heading-copy">
               <div className="eyebrow">{report.station} / OPERATING PLAN</div>
               <div className="title-line">
@@ -661,12 +432,12 @@ export default function Home() {
                   : tab === 'occupancy'
                     ? 'Airport gate occupancy from the daily planning workbook.'
                     : tab === 'shutdown'
-                    ? 'Aircraft positions and maintenance requirements for the night.'
-                    : tab === 'review'
-                      ? 'Resolve operational decisions before issuing the plan.'
-                      : tab === 'overview'
-                        ? 'The operating picture, with exceptions first.'
-                        : 'Aircraft movements · All schedule times local'}
+                      ? 'Aircraft positions and maintenance requirements for the night.'
+                      : tab === 'review'
+                        ? 'Resolve operational decisions before issuing the plan.'
+                        : tab === 'overview'
+                          ? 'The operating picture, with exceptions first.'
+                          : 'Aircraft movements · All schedule times local'}
               </p>
             </div>
           </div>
@@ -810,9 +581,17 @@ export default function Home() {
                 </div>
               )}
               <p className="source-session-note">
-                Files stay in this browser session. Download reports before
-                refreshing or closing.
+                The working plan stays in this browser tab across refresh. Use
+                Clear desk to start empty. Download reports before closing.
               </p>
+              <Button
+                variant="outline"
+                className="button source-clear-desk"
+                onClick={clearDesk}
+                disabled={!fileName && !airport}
+              >
+                Clear desk
+              </Button>
             </SheetContent>
           </Sheet>
           <input
@@ -913,8 +692,8 @@ export default function Home() {
                   Visualize airport gate plan
                 </Button>
                 <small>
-                  Every new session starts empty. Download your reports before
-                  leaving.
+                  Refresh keeps the working plan in this tab. Use Clear desk in
+                  Source files to start empty.
                 </small>
               </CardContent>
             </Card>
@@ -923,6 +702,7 @@ export default function Home() {
               <GateOccupancy
                 airport={airport}
                 date={airport?.date || ''}
+                station={report.station}
                 loading={airportLoading}
                 error={airportError}
                 upload={() => airportInput.current?.click()}
@@ -1059,7 +839,7 @@ export default function Home() {
                     onFin={setSelectedFin}
                   />
                 </TabsContent>
-                <TabsContent value="moves" className="no-print">
+                <TabsContent value="moves" className="no-print gantt-view">
                   <section className="panel">
                     <div className="panel-heading">
                       <div>
@@ -1573,6 +1353,7 @@ export default function Home() {
                   <GateOccupancy
                     airport={airport}
                     date={report.date || airport?.date || ''}
+                    station={report.station}
                     loading={airportLoading}
                     error={airportError}
                     upload={() => airportInput.current?.click()}
@@ -1586,6 +1367,7 @@ export default function Home() {
                   <ShutdownPlanner
                     key={uploadRevision}
                     report={report}
+                    initial={overnightSnapshot}
                     onSnapshot={setOvernightSnapshot}
                     onFin={setSelectedFin}
                   />
@@ -1600,125 +1382,17 @@ export default function Home() {
             </span>
           </footer>
         </main>
-        <Sheet
-          open={!!editing}
+        <TowMoveEditor
+          editing={editing}
+          editError={editError}
+          report={report}
+          isNewManual={isNewManual}
+          onChange={setEditing}
           onOpenChange={(open) => {
             if (!open) setEditing(null);
           }}
-        >
-          <SheetContent className="edit-sheet">
-            <SheetHeader>
-              <SheetTitle>
-                {isNewManual
-                  ? 'Add tow move'
-                  : `Edit tow · FIN ${editing?.fin || 'unassigned'}`}
-              </SheetTitle>
-              <SheetDescription>
-                {isNewManual
-                  ? 'Enter the required route and pickup details.'
-                  : editing?.reason}
-              </SheetDescription>
-            </SheetHeader>
-            {editing && (
-              <form onSubmit={saveEdit} className="edit-form">
-                {editing.kind === 'manual' ? (
-                  <div className="edit-source">
-                    Manual tow move · required fields are marked *
-                  </div>
-                ) : (
-                  <div className="edit-source">
-                    Source:{' '}
-                    {timeLabel(
-                      report.turns.find((t) => t.id === editing.turnId)
-                        ?.arrival ?? null,
-                      report.date,
-                    )}{' '}
-                    arrival ·{' '}
-                    {timeLabel(
-                      report.turns.find((t) => t.id === editing.turnId)
-                        ?.departure ?? null,
-                      report.date,
-                    )}{' '}
-                    departure
-                  </div>
-                )}
-                {editing.warnings.map((w) => (
-                  <p key={w} className="edit-warning">
-                    <AlertTriangle size={15} />
-                    {w}
-                  </p>
-                ))}
-                <div className="edit-grid">
-                  {(
-                    [
-                      ['fin', 'FIN #', 'text'],
-                      ['arrFlight', 'Arrival flight', 'text'],
-                      ['from', 'Tow from', 'text'],
-                      ['to', 'Tow to', 'text'],
-                      ['pickup', 'Scheduled pickup', 'time'],
-                      ['release', 'Aircraft release', 'time'],
-                      ['gateOpen', 'Gate opens at', 'time'],
-                      ['depFlight', 'Departure flight', 'text'],
-                      ['depTime', 'Departure time', 'time'],
-                      ['actualPickup', 'Actual pickup', 'time'],
-                      ['actualDrop', 'Actual drop', 'time'],
-                      ['tower', 'Tower', 'text'],
-                    ] as const
-                  ).map(([key, label, type]) => {
-                    const required = ['fin', 'from', 'to', 'pickup'].includes(
-                      key,
-                    );
-                    return (
-                      <label key={key} htmlFor={`tow-edit-${key}`}>
-                        {label}
-                        {required ? ' *' : ''}
-                        <Input
-                          id={`tow-edit-${key}`}
-                          type={type}
-                          required={required}
-                          readOnly={
-                            key === 'depTime' && editing.kind !== 'manual'
-                          }
-                          value={editing[key]}
-                          onChange={(e) =>
-                            setEditing({
-                              ...editing,
-                              [key]: e.target.value,
-                              reviewed: false,
-                            })
-                          }
-                        />
-                      </label>
-                    );
-                  })}
-                </div>
-                <label className="check-label" htmlFor="edit-included">
-                  <Checkbox
-                    id="edit-included"
-                    checked={editing.included}
-                    onCheckedChange={(v) =>
-                      setEditing({ ...editing, included: !!v })
-                    }
-                  />
-                  Include on tow sheet
-                </label>
-                {editError && (
-                  <p role="alert" className="warning-text">
-                    {editError}
-                  </p>
-                )}
-                <p className="muted">
-                  Saving confirms this route, timing and any warnings have been
-                  reviewed.
-                </p>
-                <Button type="submit" className="button primary">
-                  <Check size={17} />
-                  {isNewManual ? 'Add tow move' : 'Save & mark reviewed'}
-                </Button>
-              </form>
-            )}
-          </SheetContent>
-        </Sheet>
+          onSubmit={saveEdit}
+        />
         <AircraftDrawer
           gateChecks={gateChecks}
           airportLoaded={!!airport}

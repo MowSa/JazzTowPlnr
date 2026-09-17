@@ -1,9 +1,18 @@
 'use client';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, PlaneLanding, PlaneTakeoff, Route } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { type Move, type Turn, type Report, timeLabel } from '@/lib/tows';
-import { towStatus, statusNames } from '@/lib/console';
+import { stationWallClockStamp, towStatus, statusNames } from '@/lib/console';
+
+function scrollTimelineToNow(wrap: HTMLDivElement | null, leftPct: number) {
+  if (!wrap) return;
+  const hours = wrap.querySelector('.timeline-hours');
+  if (!(hours instanceof HTMLElement)) return;
+  const left = hours.offsetLeft + (hours.offsetWidth * leftPct) / 100;
+  wrap.scrollLeft = Math.max(0, left - wrap.clientWidth * 0.35);
+}
 /** Display coordinates only: schedule timestamps already encode station wall time. */
 export function TowTimeline({
   report,
@@ -32,8 +41,63 @@ export function TowTimeline({
   const fins = [
     ...new Set([...moves.map((m) => m.fin), ...pending.map((t) => t.fin)]),
   ];
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const scrolledNow = useRef(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    let timer = 0;
+    const tick = () => {
+      setNowMs(Date.now());
+      timer = window.setTimeout(tick, 60_000 - (Date.now() % 60_000) + 50);
+    };
+    tick();
+    return () => window.clearTimeout(timer);
+  }, []);
+  const now = useMemo(
+    () =>
+      report.date
+        ? stationWallClockStamp(nowMs, report.station || '', report.date)
+        : null,
+    [nowMs, report.date, report.station],
+  );
+  function scrollToNow() {
+    if (now === null) return;
+    scrollTimelineToNow(wrapRef.current, position(now));
+  }
+  useLayoutEffect(() => {
+    if (now === null || scrolledNow.current) return;
+    scrolledNow.current = true;
+    const pct = Math.max(0, Math.min(100, ((now - start) / 86400000) * 100));
+    scrollTimelineToNow(wrapRef.current, pct);
+  }, [now, start, fins.length]);
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const onWheel = (event: WheelEvent) => {
+      if (event.ctrlKey) return;
+      let dy = event.deltaY;
+      if (event.deltaMode === 1) dy *= 16;
+      if (event.deltaMode === 2) dy *= el.clientHeight;
+      if (event.shiftKey) {
+        el.scrollLeft += dy || event.deltaX;
+        event.preventDefault();
+        return;
+      }
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+      const page = el.closest('.console-main');
+      const scroller =
+        page && page.scrollHeight > page.clientHeight + 1
+          ? page
+          : document.scrollingElement;
+      if (!(scroller instanceof HTMLElement)) return;
+      event.preventDefault();
+      scroller.scrollTop += dy;
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [fins.length]);
   return (
-    <div className="timeline-wrapper">
+    <div className="timeline-wrapper" ref={wrapRef}>
       <div className="timeline-legend">
         <span>
           <PlaneLanding size={14} /> Arrival
@@ -44,7 +108,20 @@ export function TowTimeline({
         <span>
           <PlaneTakeoff size={14} /> Departure
         </span>
-        <span>All times local · full operating day</span>
+        <span className="timeline-legend-end">
+          All times local · full operating day
+          {now !== null && (
+            <Button
+              type="button"
+              variant="outline"
+              className="timeline-now-button"
+              onClick={scrollToNow}
+              aria-label="Scroll timeline to now"
+            >
+              Now
+            </Button>
+          )}
+        </span>
       </div>
       <div
         className="tow-timeline"
@@ -58,6 +135,12 @@ export function TowTimeline({
                 {String(i * 2).padStart(2, '0')}:00
               </span>
             ))}
+            {now !== null && (
+              <span
+                className="gantt-now"
+                style={{ left: `${position(now)}%` }}
+              />
+            )}
           </div>
         </div>
         {fins.map((fin) => {
@@ -120,6 +203,12 @@ export function TowTimeline({
                       </Badge>
                     </div>
                     <div className="timeline-track">
+                      {now !== null && (
+                        <span
+                          className="gantt-now"
+                          style={{ left: `${position(now)}%` }}
+                        />
+                      )}
                       {validGround && (
                         <div
                           className="ground-line"

@@ -1,0 +1,133 @@
+.yul-arrival-toasts {
+  position: fixed;
+  top: 76px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 80;
+  display: grid;
+  gap: 8px;
+  width: min(340px, calc(100vw - 36px));
+  pointer-events: none;
+}
+
+.yul-arrival-toast {
+  pointer-events: auto;
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 10px;
+  align-items: start;
+  padding: 12px 12px 16px 15px;
+  border-radius: 14px;
+  border: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-1) 88%, transparent);
+  color: var(--text-primary);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  overflow: hidden;
+  animation: yul-toast-in 240ms ease-out;
+}
+
+/* Kind-coded accent bar: early = info blue, late = warning amber. */
+.yul-arrival-toast::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--info);
+}
+
+.yul-arrival-toast.is-late::before {
+  background: var(--warning);
+}
+
+@keyframes yul-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+.yul-arrival-toast-body {
+  width: auto;
+  grid-column: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  white-space: normal;
+}
+
+.yul-arrival-toast-body span span {
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.yul-arrival-toast.is-early .yul-arrival-toast-body > span:first-child span {
+  color: var(--info);
+}
+
+.yul-arrival-toast.is-late .yul-arrival-toast-body > span:first-child span {
+  color: var(--warning);
+}
+
+.yul-arrival-toast-sub {
+  color: var(--text-secondary);
+}
+
+.yul-arrival-toast-clocks {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.yul-arrival-toast-timer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: color-mix(in srgb, var(--text-primary) 12%, transparent);
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.yul-arrival-toast-timer i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  transform-origin: left center;
+  background: color-mix(in srgb, var(--text-primary) 45%, transparent);
+  animation: yul-toast-shrink 6s linear forwards;
+}
+
+@keyframes yul-toast-shrink {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+.yul-arrival-toast-close {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.yul-arrival-toast-close:hover {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+}

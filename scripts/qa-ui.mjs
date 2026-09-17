@@ -1,4 +1,4 @@
-// Run with Node 22.13+ and PLAYWRIGHT_MODULE set to an installed playwright package.
+// Run with npm run test:ui (Node 22.13+); the runner starts a demo-mode server.
 // Uses existing fixtures and explicitly synthetic QA schedules; no app data is preloaded.
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -11,16 +11,35 @@ const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const out = fileURLToPath(new URL('../output/playwright/', import.meta.url));
 await mkdir(out, { recursive: true });
-const browser = await chromium.launch({ headless: true, channel: 'chrome' });
-const page = await browser.newPage({
+const browser = await chromium.launch({
+  headless: true,
+  ...(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {}),
+});
+// Keep accidental API calls in this planner suite off all paid feeds.
+// The owned server also runs with DEMO_MODE=true.
+const context = await browser.newContext({
   viewport: { width: 1366, height: 900 },
   acceptDownloads: true,
 });
+// Pre-authenticate against the Sites plugin's local sign-in so its
+// /signin-with-chatgpt redirect chain cannot reload the page mid-check and
+// wipe ephemeral state (e.g. an upload error message).
+await context.addCookies([
+  {
+    name: '__sites_local_auth',
+    value: '1',
+    domain: 'localhost',
+    path: '/',
+  },
+]);
+await context.route(/fr24api\.flightradar24\.com/, (route) => route.abort());
+const page = await context.newPage();
 page.setDefaultTimeout(10000);
 const failures = [],
   results = [],
   errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
+page.on('dialog', (dialog) => dialog.accept());
 const check = async (name, fn) => {
   try {
     await fn();
@@ -87,6 +106,27 @@ try {
   await check('No-source state and dark theme', async () => {
     await page.goto(process.env.QA_URL || 'http://localhost:3000');
     await page.getByRole('button', { name: 'Use light mode' }).waitFor();
+    // The theme button is server-rendered and visible before hydration.
+    // Toggle it twice with retry: the label flip only happens via React
+    // state, so this proves hydration finished before later checks fire DOM
+    // events (a cold dev server hydrates slowly and drops pre-hydration
+    // input, including file-upload change events).
+    for (const [from, to] of [
+      ['Use light mode', 'Use dark mode'],
+      ['Use dark mode', 'Use light mode'],
+    ]) {
+      for (;;) {
+        await page.getByRole('button', { name: from, exact: true }).click();
+        try {
+          await page
+            .getByRole('button', { name: to, exact: true })
+            .waitFor({ timeout: 2000 });
+          break;
+        } catch {
+          // Click landed before hydration; try again.
+        }
+      }
+    }
     assert.equal(await page.locator('.session-empty').count(), 1);
     assert.equal(await page.locator('.metric-strip').count(), 0);
     await snap('01-empty-dark');
@@ -120,6 +160,7 @@ try {
       await snap('02-overview-dark-1366');
     },
   );
+  if (process.env.QA_SMOKE !== 'true') {
   await check(
     'Timeline, table, sorting and included/excluded movement',
     async () => {
@@ -127,7 +168,6 @@ try {
       assert.equal(await page.locator('.timeline-leg').count(), 8);
       await snap('03-timeline-dark');
       await page.getByRole('tab', { name: 'Table', exact: true }).click();
-      const checks = page.locator('.panel input[type=checkbox]');
       const checkbox = page
         .getByRole('checkbox', { name: /Include FIN/ })
         .first();
@@ -149,6 +189,16 @@ try {
   await check(
     'Manual add, edit, validation and actual execution statuses',
     async () => {
+      // Demo arrival notices can cover the toolbar; dismiss through the public UI.
+      // Notices auto-dismiss on a timer, so re-query instead of snapshotting —
+      // a stale handle would time out after its toast has already expired.
+      for (;;) {
+        const notice = page
+          .getByRole('button', { name: 'Dismiss arrival notice', exact: true })
+          .first();
+        if ((await notice.count()) === 0) break;
+        await notice.click();
+      }
       await page.getByRole('button', { name: 'Add tow', exact: true }).click();
       const dialog = page.getByRole('dialog');
       await dialog.getByLabel('FIN # *', { exact: true }).fill('999');
@@ -520,6 +570,9 @@ try {
       await page.getByLabel('Search aircraft', { exact: true }).fill('999');
       await page.keyboard.press('Tab');
       await page.keyboard.press('Enter');
+      // Wait for the search dialog's exit transition to finish unmounting —
+      // asserting while it is still animating out counts a closing dialog.
+      await page.locator('.aircraft-search-dialog').waitFor({ state: 'hidden' });
       await page.getByLabel('Note for FIN 999').waitFor();
       await page.getByLabel('Note for FIN 999').focus();
       await page.keyboard.press('Control+k');
@@ -550,14 +603,38 @@ try {
     await snap('12-table-light-1366');
   });
   await check(
-    'Refresh clears source data, preserves theme preference',
+    'Refresh restores source data, Clear desk empties, theme preference stays',
     async () => {
       await page.reload();
+      // The session restores the last active tab (Tow Plan); the metric
+      // strip lives on Overview. Retry the nav click so a pre-hydration
+      // click dropped by a cold boot cannot stall the check.
+      for (;;) {
+        await page.getByRole('button', { name: 'Overview', exact: true }).click();
+        try {
+          await page.locator('.metric-strip').waitFor({ timeout: 2000 });
+          break;
+        } catch {
+          // Pre-hydration click dropped; retry.
+        }
+      }
+      assert.equal(
+        await page.locator('.metric-strip strong').nth(0).innerText(),
+        '53',
+      );
+      await page.getByRole('button', { name: /Next pickup FIN/ }).waitFor();
+      await page.getByRole('button', { name: 'Use dark mode' }).waitFor();
+      await page
+        .getByRole('button', { name: 'Source files', exact: false })
+        .click();
+      await page.getByRole('button', { name: 'Clear desk', exact: true }).click();
+      await page
+        .getByRole('heading', { name: 'Source files', exact: true })
+        .waitFor({ state: 'hidden' });
       await page
         .getByRole('button', { name: 'Upload flight schedule', exact: true })
         .waitFor();
       assert.equal(await page.locator('.metric-strip').count(), 0);
-      await page.getByRole('button', { name: 'Use dark mode' }).waitFor();
     },
   );
   await check('No-tow schedule and empty overnight state', async () => {
@@ -596,6 +673,7 @@ try {
     await page.getByLabel('Search tow moves').fill('1999');
     assert.ok((await page.locator('.panel tbody tr').count()) <= 3);
   });
+  }
   await check('No browser runtime errors', async () => {
     assert.deepEqual(errors, []);
   });

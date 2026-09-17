@@ -23,7 +23,7 @@ import {
   type OccupancyKind,
   type OccupancySpan,
   clipOccupancy,
-  occupancyConflicts,
+  occupancyConflictIds,
   occupancyDurationLabel,
   occupancyFlights,
   occupancyKindLabel,
@@ -32,6 +32,7 @@ import {
   sortGates,
 } from '@/lib/gates';
 import { timeLabel } from '@/lib/tows';
+import { stationWallClockStamp } from '@/lib/console';
 const carriers = [
   'AC',
   'AAL',
@@ -350,12 +351,14 @@ function OccupancyInspector({
 export function GateOccupancy({
   airport,
   date,
+  station,
   loading,
   error,
   upload,
 }: {
   airport: AirportPlan | null;
   date: string;
+  station?: string;
   loading: boolean;
   error: string;
   upload: () => void;
@@ -402,17 +405,10 @@ export function GateOccupancy({
       ]),
     [visible, day],
   );
-  const conflicts = useMemo(() => {
-    const ids = new Set<string>();
-    for (const gate of gates) {
-      for (const id of occupancyConflicts(
-        visible.filter((o) => occupancyRowGate(o.gate) === gate),
-        day,
-      ))
-        ids.add(id);
-    }
-    return ids;
-  }, [visible, gates, day]);
+  const conflicts = useMemo(
+    () => occupancyConflictIds(airport?.occupancies || [], day),
+    [airport, day],
+  );
   const airlines = useMemo(
     () =>
       [...new Set((airport?.occupancies || []).map((o) => o.airline).filter(Boolean))]
@@ -424,15 +420,20 @@ export function GateOccupancy({
         ),
     [airport],
   );
-  const now = useMemo(() => {
-    if (!day) return null;
-    const n = new Date();
-    const local = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
-    if (local !== day) return null;
-    return Date.parse(
-      `${day}T${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}:00Z`,
-    );
-  }, [day]);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    let timer = 0;
+    const tick = () => {
+      setNowMs(Date.now());
+      timer = window.setTimeout(tick, 60_000 - (Date.now() % 60_000) + 50);
+    };
+    tick();
+    return () => window.clearTimeout(timer);
+  }, []);
+  const now = useMemo(
+    () => (day ? stationWallClockStamp(nowMs, station || '', day) : null),
+    [day, nowMs, station],
+  );
   const selectedItem = visible.find((o) => o.id === selected) || null;
   const plotted = visible.filter((o) => clipOccupancy(o, day)).length;
   useLayoutEffect(() => {

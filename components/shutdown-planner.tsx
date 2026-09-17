@@ -76,22 +76,24 @@ export default function ShutdownPlanner({
   report,
   onSnapshot,
   onFin,
+  initial,
 }: {
   report: Report;
   onSnapshot?: (
-    snapshot: import('./operations-console').OvernightSnapshot,
+    snapshot: import('@/lib/planner-session').OvernightSnapshot,
   ) => void;
   onFin?: (fin: string) => void;
+  initial?: import('@/lib/planner-session').OvernightSnapshot | null;
 }) {
   const [showReport, setShowReport] = useState(false),
     [confirmGenerate, setConfirmGenerate] = useState(false);
-  const [night, setNight] = useState(report.date),
-    [required, setRequired] = useState(''),
-    [allowed, setAllowed] = useState('');
-  const [rows, setRows] = useState<ShutdownRow[]>([]),
-    [generated, setGenerated] = useState(false),
-    [source, setSource] = useState(''),
-    [reportNight, setReportNight] = useState(report.date),
+  const [night, setNight] = useState(initial?.date || report.date),
+    [required, setRequired] = useState(initial?.required || ''),
+    [allowed, setAllowed] = useState(initial?.allowed || '');
+  const [rows, setRows] = useState<ShutdownRow[]>(initial?.rows || []),
+    [generated, setGenerated] = useState(!!initial?.generated),
+    [source, setSource] = useState(initial?.source || ''),
+    [reportNight, setReportNight] = useState(initial?.date || report.date),
     [error, setError] = useState('');
   const [editing, setEditing] = useState<ShutdownRow | null>(null),
     [editError, setEditError] = useState('');
@@ -123,8 +125,16 @@ export default function ShutdownPlanner({
     generated && source !== JSON.stringify([night, required, allowed]);
   const draft = dirty || shutdownDraft(rows);
   useEffect(() => {
-    onSnapshot?.({ rows, date: reportNight, dirty, generated });
-  }, [rows, reportNight, dirty, generated, onSnapshot]);
+    onSnapshot?.({
+      rows,
+      date: reportNight,
+      dirty,
+      generated,
+      required,
+      allowed,
+      source,
+    });
+  }, [rows, reportNight, dirty, generated, required, allowed, source, onSnapshot]);
   function generate() {
     try {
       const next = buildShutdown(report, night, required, allowed);

@@ -1,0 +1,983 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+html:has(.yul-app),
+body:has(.yul-app) {
+  background: var(--bg-app);
+  overflow: hidden;
+}
+
+.yul-app {
+  --bg: var(--bg-app);
+  --panel: var(--surface-1);
+  --panel-2: var(--surface-2);
+  --line: var(--border-subtle);
+  --text: var(--text-primary);
+  --muted: var(--text-secondary);
+  --blue: var(--info);
+  --blue-soft: var(--info-soft);
+  --green: var(--success);
+  --green-soft: var(--success-soft);
+  --live: var(--success);
+  --warn: var(--warning);
+  --warn-soft: var(--warning-soft);
+  --sel: var(--info);
+  --sel-soft: color-mix(in srgb, var(--info) 12%, transparent);
+  --sel-ring: color-mix(in srgb, var(--info) 45%, transparent);
+  --overlay: color-mix(in srgb, var(--surface-1) 86%, transparent);
+  --hairline: color-mix(in srgb, var(--text-primary) 8%, transparent);
+  --radius: 14px;
+  position: relative;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.yul-app * {
+  box-sizing: border-box;
+}
+
+/* Shared floating surface — the "glass" every chrome element uses. */
+.yul-glass {
+  background: var(--overlay);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+
+/* ---------- Map canvas: full-bleed, edge to edge ---------- */
+
+.yul-map {
+  position: absolute;
+  inset: 0;
+  min-width: 0;
+  min-height: 0;
+  background: #05070c;
+}
+
+.yul-globe-wrap,
+.yul-globe-canvas,
+.yul-map .cesium-viewer,
+.yul-map .cesium-viewer-cesiumWidgetContainer,
+.yul-map .cesium-widget,
+.yul-map .cesium-widget canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.yul-globe-wrap {
+  position: relative;
+}
+
+.yul-globe-tip {
+  position: absolute;
+  z-index: 4;
+  min-width: 214px;
+  max-width: 280px;
+  padding: 10px 12px 11px;
+  border-radius: 12px;
+  border: 1px solid var(--hairline);
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  box-shadow: var(--shadow);
+  pointer-events: none;
+  color: var(--text);
+}
+
+.yul-globe-tip-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.yul-globe-tip-head strong {
+  font-size: 14px;
+  letter-spacing: 0.02em;
+}
+
+.yul-globe-tip-head span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.yul-globe-tip-route {
+  margin-top: 4px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.yul-globe-tip-meta {
+  margin: 8px 0 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  font-size: 12px;
+}
+
+.yul-globe-tip-meta dt {
+  color: var(--muted);
+}
+
+.yul-globe-tip-meta dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 600;
+}
+
+/* ---------- Top bar: one floating island ---------- */
+
+.yul-header {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 56px;
+  padding: 0 10px 0 14px;
+}
+
+.yul-header-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.yul-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: inherit;
+  border-radius: 10px;
+}
+
+.yul-brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.yul-brand-text strong {
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.yul-brand-text span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.yul-mark {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  color: var(--jazz);
+}
+
+.yul-jazz-logo {
+  display: block;
+  height: 26px;
+  width: auto;
+}
+
+.yul-jazz-logo.is-compact {
+  height: 18px;
+}
+
+/* Operational counts — the 3-second answer. */
+.yul-header-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-inline: auto;
+}
+
+.yul-header-summary > div {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-2) 72%, transparent);
+}
+
+.yul-header-summary strong {
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.yul-header-summary > div span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.yul-header-summary .in {
+  color: var(--green);
+}
+
+.yul-header-summary .out {
+  color: var(--blue);
+}
+
+.yul-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.yul-header .theme-toggle {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+}
+
+/* Status pill — replaces the old footer. */
+.yul-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: color-mix(in srgb, var(--surface-2) 72%, transparent);
+  color: var(--live);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.yul-status-pill.is-delayed {
+  color: var(--warn);
+}
+
+.yul-status-pill.is-offline {
+  color: var(--danger);
+}
+
+.yul-status-pill .pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 0 currentColor;
+  animation: yul-pulse 2.4s infinite;
+}
+
+@keyframes yul-pulse {
+  70% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+
+.yul-status-pop {
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.yul-status-pop .row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.yul-status-pop .row span {
+  color: var(--muted);
+}
+
+.yul-status-pop .row strong {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.yul-status-pop .credit {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--hairline);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.yul-next-poll {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* ---------- Traffic rail: floating left panel ---------- */
+
+.yul-left {
+  position: absolute;
+  top: 80px;
+  left: 12px;
+  bottom: 12px;
+  z-index: 6;
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  transition: width 200ms ease;
+}
+
+.yul-left.is-collapsed {
+  width: 52px;
+  align-items: center;
+  padding: 8px 0;
+  gap: 10px;
+}
+
+.yul-left-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 12px 8px;
+}
+
+.yul-left-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.yul-left-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.yul-sort-select {
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* Collapsed icon strip: direction-colored counts. */
+.yul-rail-count {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.yul-rail-count i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.yul-rail-count.is-in {
+  color: var(--green);
+}
+
+.yul-rail-count.is-out {
+  color: var(--blue);
+}
+
+.yul-rail-count i {
+  background: currentColor;
+}
+
+/* Rail reopen button: only needed once the rail is fully hidden on small screens. */
+.yul-sidebar-toggle {
+  display: none;
+  position: absolute;
+  top: 80px;
+  left: 12px;
+  z-index: 6;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--overlay);
+  color: var(--text);
+  backdrop-filter: blur(16px);
+}
+
+/* ---------- Flight list cards ---------- */
+
+.yul-flight {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  gap: 6px 8px;
+  padding: 10px;
+  border-radius: 14px;
+  text-align: left;
+  transition: background 160ms ease, box-shadow 160ms ease;
+}
+
+.yul-flight:hover {
+  background: color-mix(in srgb, var(--surface-2) 80%, transparent);
+}
+
+.yul-flight-icon {
+  width: 32px;
+  height: 32px;
+  grid-row: 1 / 4;
+  align-self: start;
+  margin-top: 2px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+}
+
+.yul-flight-icon.is-in {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.yul-flight-icon.is-out {
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+.yul-flight.is-selected {
+  background: var(--sel-soft);
+  box-shadow: inset 0 0 0 1px var(--sel-ring);
+}
+
+.yul-phase.is-arriving {
+  border-color: transparent;
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.yul-phase.is-airborne {
+  border-color: transparent;
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+.yul-phase.is-taxiing {
+  border-color: transparent;
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.yul-flight-code {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.yul-flight-code small {
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.yul-flight-route {
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.yul-flight-meta,
+.yul-kv span,
+.yul-muted,
+.yul-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.yul-flight-meta {
+  display: flex;
+  gap: 8px;
+  grid-column: 2;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Selected flight: contextual overlay card ---------- */
+
+.yul-right {
+  position: absolute;
+  top: 80px;
+  right: 12px;
+  z-index: 7;
+  width: 360px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 156px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  animation: yul-card-in 220ms ease-out;
+}
+
+@keyframes yul-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.yul-right-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 14px 14px 8px;
+}
+
+.yul-right-head h2 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.yul-right-head p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.yul-type {
+  font-size: 12px !important;
+  letter-spacing: 0.04em;
+}
+
+.yul-right-body {
+  overflow: auto;
+  min-height: 0;
+  flex: 1;
+}
+
+.yul-hero {
+  margin: 6px 14px 12px;
+  border-radius: var(--radius);
+  background: var(--panel-2);
+}
+
+.yul-airports {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.yul-airports strong {
+  font-size: 26px;
+  letter-spacing: 0.02em;
+}
+
+.yul-airports small {
+  display: block;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.yul-airports .to {
+  text-align: right;
+}
+
+.yul-route-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--blue);
+}
+
+.yul-route-line::before,
+.yul-route-line::after {
+  content: '';
+  height: 2px;
+  flex: 1;
+  border-radius: 99px;
+  background: linear-gradient(
+    90deg,
+    var(--blue),
+    color-mix(in srgb, var(--blue) 55%, #fff)
+  );
+}
+
+.yul-times {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.yul-times span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.yul-times strong {
+  font-size: 21px;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.yul-time-zulu {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.yul-time-zulu span {
+  font-size: 0.72em;
+  font-weight: 700;
+  margin-left: 1px;
+  vertical-align: 0.18em;
+}
+
+.yul-variance {
+  display: inline-flex;
+  margin: 10px 0 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.yul-variance.is-early {
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+.yul-variance.is-late {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.yul-kv {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px 12px;
+  padding: 4px 16px 14px;
+}
+
+.yul-kv strong {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.yul-actions {
+  margin-top: auto;
+  padding: 10px 14px 14px;
+  display: grid;
+  gap: 8px;
+}
+
+/* ---------- Map chrome ---------- */
+
+.yul-map-controls {
+  position: absolute;
+  z-index: 5;
+  right: 12px;
+  bottom: 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border-radius: 14px;
+}
+
+.yul-map-btn {
+  background: transparent;
+  color: var(--text);
+  border: 0;
+}
+
+.yul-map-btn:hover {
+  background: color-mix(in srgb, var(--surface-2) 85%, transparent);
+}
+
+.yul-view-switch {
+  position: absolute;
+  z-index: 5;
+  right: 12px;
+  bottom: 12px;
+  border-radius: 999px;
+  padding: 4px;
+}
+
+.yul-follow-pill {
+  position: absolute;
+  z-index: 6;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 8px 0 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  animation: yul-pill-in 200ms ease-out;
+}
+
+.yul-follow-pill .plane {
+  color: var(--jazz);
+  display: grid;
+  place-items: center;
+}
+
+@keyframes yul-pill-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 6px);
+  }
+}
+
+.yul-live-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--live);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.yul-live-dot.is-delayed {
+  color: var(--warn);
+}
+
+.yul-empty,
+.yul-placeholder {
+  padding: 24px 18px;
+  color: var(--muted);
+}
+
+/* ---------- Cesium chrome overrides ---------- */
+
+.yul-app .cesium-viewer-bottom {
+  display: block;
+  left: 10px;
+  right: auto;
+  bottom: 10px;
+  max-width: min(420px, 46%);
+  pointer-events: auto;
+}
+
+.yul-app .cesium-widget-credits {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  padding: 3px 8px;
+  border-radius: 8px;
+  background: var(--overlay);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.yul-app .cesium-credit-text,
+.yul-app .cesium-credit-text a,
+.yul-app .cesium-credit-expand-link {
+  color: inherit;
+}
+
+.yul-app .cesium-viewer-fullscreenContainer,
+.yul-app .cesium-viewer-toolbar {
+  display: none;
+}
+
+/* ---------- Fleet board ---------- */
+
+.yul-app.is-fleet {
+  overflow: auto;
+}
+
+.yul-fleet {
+  min-height: 100vh;
+  padding: 88px 22px 24px;
+  background: var(--bg);
+}
+
+.yul-fleet-intro {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.yul-fleet-intro h1 {
+  margin: 0 0 4px;
+  font-size: 22px;
+  font-weight: 650;
+}
+
+.yul-fleet-intro p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  max-width: 52rem;
+}
+
+.yul-fleet-summaryline {
+  margin: 0 0 16px;
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.yul-fleet-summaryline strong {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.yul-fleet-summaryline .sep {
+  margin: 0 8px;
+  color: var(--line);
+}
+
+.yul-fleet-table {
+  min-width: 1100px;
+}
+
+.yul-fleet-sort {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.yul-fleet-row {
+  cursor: pointer;
+}
+
+.yul-fleet-row.is-stale {
+  opacity: 0.55;
+}
+
+.yul-fleet-row .in {
+  color: var(--green);
+  font-weight: 650;
+}
+
+.yul-fleet-row .out {
+  color: var(--blue);
+  font-weight: 650;
+}
+
+.yul-fleet-phase.is-arriving,
+.yul-fleet-phase.is-airborne,
+.yul-fleet-phase.is-taxiing {
+  border-color: transparent;
+}
+
+.yul-fleet-phase.is-arriving {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.yul-fleet-phase.is-airborne {
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+.yul-fleet-phase.is-taxiing {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.yul-fleet-eta {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.yul-fleet-eta small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.yul-fleet-empty {
+  min-height: 240px;
+  border: 1px dashed var(--line);
+}
+
+/* ---------- Responsive ---------- */
+
+@media (max-width: 1440px) {
+  .yul-left {
+    width: 300px;
+  }
+  .yul-search {
+    width: 220px !important;
+  }
+}
+
+@media (max-width: 1180px) {
+  .yul-brand-text span {
+    display: none;
+  }
+  .yul-header-summary > div span {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .yul-left {
+    display: none;
+  }
+  .yul-sidebar-toggle {
+    display: grid;
+    place-items: center;
+  }
+  .yul-header-summary {
+    display: none;
+  }
+  .yul-right {
+    top: auto;
+    bottom: 12px;
+    max-height: 62vh;
+    width: min(360px, calc(100vw - 24px));
+  }
+}
+
+/* Fleet page: the top bar stays fixed while the board scrolls. */
+.yul-app.is-fleet .yul-header {
+  position: fixed;
+}

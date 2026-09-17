@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState, type ReactNode } from 'react';
+import Link from 'next/link';
 import {
   Plane,
   LayoutList,
@@ -7,7 +8,6 @@ import {
   Moon,
   ListChecks,
   ArrowRight,
-  Sun,
   LayoutDashboard,
   FileOutput,
   GanttChart,
@@ -15,6 +15,7 @@ import {
   PanelLeftOpen,
   Files,
 } from 'lucide-react';
+import { ThemeToggle } from '@/components/theme-toggle';
 import {
   Sidebar,
   SidebarHeader,
@@ -37,14 +38,16 @@ import { Textarea } from '@/components/ui/textarea';
 import { type GateCheck } from '@/lib/gates';
 import { Badge } from '@/components/ui/badge';
 import { type Move, type Report, timeLabel } from '@/lib/tows';
-import { type ShutdownRow } from '@/lib/shutdown';
 import { stationTimezone, towStatus, statusNames } from '@/lib/console';
-export type OvernightSnapshot = {
-  rows: ShutdownRow[];
-  date: string;
-  dirty: boolean;
-  generated: boolean;
-};
+import {
+  nextIncludedPickup,
+  nextPickupNowStamp,
+  type OvernightSnapshot,
+} from '@/lib/planner-session';
+import { previewArrivalToast } from '@/components/yul-ops/arrival-toasts';
+import { ToastInbox } from '@/components/yul-ops/toast-inbox';
+export type { OvernightSnapshot };
+
 export function ConsoleNav({
   tab,
   go,
@@ -64,34 +67,51 @@ export function ConsoleNav({
   collapsed: boolean;
   toggle: () => void;
 }) {
-  const items = [
-    { id: 'overview', label: 'Overview', Icon: LayoutDashboard, count: 0 },
-    { id: 'moves', label: 'Tow Plan', Icon: LayoutList, count: towCount },
+  // Workflow rail: the desk runs load → plan → verify → finalize. Grouping
+  // follows that arc so the nav reads as a process, not a flat page list.
+  const groups = [
     {
-      id: 'mismatch',
-      label: 'Gate Verification',
-      Icon: ScanLine,
-      count: gateCount,
+      caption: 'Plan',
+      items: [
+        { id: 'overview', label: 'Overview', Icon: LayoutDashboard, count: 0 },
+        { id: 'moves', label: 'Tow Plan', Icon: LayoutList, count: towCount },
+      ],
     },
     {
-      id: 'occupancy',
-      label: 'Gate Timeline',
-      Icon: GanttChart,
-      count: 0,
+      caption: 'Verify',
+      items: [
+        {
+          id: 'mismatch',
+          label: 'Gate Verification',
+          Icon: ScanLine,
+          count: gateCount,
+        },
+        { id: 'occupancy', label: 'Gate Timeline', Icon: GanttChart, count: 0 },
+      ],
     },
     {
-      id: 'shutdown',
-      label: 'Overnight Plan',
-      Icon: Moon,
-      count: overnightCount,
+      caption: 'Overnight',
+      items: [
+        {
+          id: 'shutdown',
+          label: 'Overnight Plan',
+          Icon: Moon,
+          count: overnightCount,
+        },
+      ],
     },
     {
-      id: 'review',
-      label: 'Review & Resolve',
-      Icon: ListChecks,
-      count: reviewCount,
+      caption: 'Finalize',
+      items: [
+        {
+          id: 'review',
+          label: 'Review & Resolve',
+          Icon: ListChecks,
+          count: reviewCount,
+        },
+        { id: 'sheet', label: 'Reports / Outputs', Icon: FileOutput, count: 0 },
+      ],
     },
-    { id: 'sheet', label: 'Reports / Outputs', Icon: FileOutput, count: 0 },
   ];
   return (
     <Sidebar collapsible="none" className="console-nav no-print">
@@ -106,47 +126,54 @@ export function ConsoleNav({
       </SidebarHeader>
       <SidebarContent>
         <nav aria-label="Operations navigation">
-          {['OPERATIONS', 'FINALIZE'].map((group, i) => (
-            <div key={group}>
-              <div className="nav-caption">{group}</div>
+          {groups.map(({ caption, items }) => (
+            <div key={caption} className="nav-group">
+              <div className="nav-caption">{caption}</div>
               <SidebarMenu>
-                {items
-                  .slice(i ? 5 : 0, i ? 7 : 5)
-                  .map(({ id, label, Icon, count }) => (
-                    <SidebarMenuItem key={id}>
-                      <SidebarMenuButton
-                        title={label}
-                        aria-label={label}
-                        isActive={
-                          tab === id || (id === 'moves' && tab === 'schedule')
+                {items.map(({ id, label, Icon, count }) => (
+                  <SidebarMenuItem key={id}>
+                    <SidebarMenuButton
+                      title={label}
+                      aria-label={label}
+                      isActive={
+                        tab === id || (id === 'moves' && tab === 'schedule')
+                      }
+                      onClick={() => go(id)}
+                      aria-current={tab === id ? 'page' : undefined}
+                    >
+                      <Icon />
+                      <span>{label}</span>
+                    </SidebarMenuButton>
+                    {count > 0 && (
+                      <SidebarMenuBadge
+                        className={
+                          id === 'mismatch'
+                            ? 'count-conflict'
+                            : id === 'review' || id === 'shutdown'
+                              ? 'count-review'
+                              : 'count-neutral'
                         }
-                        onClick={() => go(id)}
-                        aria-current={tab === id ? 'page' : undefined}
                       >
-                        <Icon />
-                        <span>{label}</span>
-                      </SidebarMenuButton>
-                      {count > 0 && (
-                        <SidebarMenuBadge
-                          className={
-                            id === 'mismatch'
-                              ? 'count-conflict'
-                              : id === 'review' || id === 'shutdown'
-                                ? 'count-review'
-                                : 'count-neutral'
-                          }
-                        >
-                          {count}
-                        </SidebarMenuBadge>
-                      )}
-                    </SidebarMenuItem>
-                  ))}
+                        {count}
+                      </SidebarMenuBadge>
+                    )}
+                  </SidebarMenuItem>
+                ))}
               </SidebarMenu>
             </div>
           ))}
         </nav>
       </SidebarContent>
       <SidebarFooter>
+        <Link className="yul-live-link" href="/yul">
+          <span className="yul-live-dot" aria-hidden="true">
+            <i />
+          </span>
+          Live Map
+        </Link>
+        <Button variant="ghost" className="yul-preview-toast-link" onClick={previewArrivalToast}>
+          Preview toast
+        </Button>
         <Button
           variant="ghost"
           className="collapse-nav"
@@ -172,6 +199,8 @@ export function StationHeader({
   dateMismatch,
   onFiles,
   search,
+  moves = [],
+  onNextPickup,
 }: {
   station: string;
   date: string;
@@ -183,6 +212,8 @@ export function StationHeader({
   dateMismatch: boolean;
   onFiles: () => void;
   search?: ReactNode;
+  moves?: Move[];
+  onNextPickup?: (fin: string) => void;
 }) {
   const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
@@ -197,26 +228,27 @@ export function StationHeader({
       timeZone: tz,
       hour: '2-digit',
       minute: '2-digit',
-      second: '2-digit',
       hourCycle: 'h23',
     }).format(instant);
-  const day = date
-    ? new Date(date + 'T12:00:00Z').toLocaleDateString('en-GB', {
-        weekday: 'short',
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-        timeZone: 'UTC',
-      })
-    : 'Operating date pending';
+  const nowStamp = now ? nextPickupNowStamp(now, station, date) : null;
+  const next = nextIncludedPickup(moves, date, nowStamp);
+  const nextMinutes =
+    next && nowStamp !== null
+      ? Math.round((Date.parse(`${date}T${next.pickup}:00Z`) - nowStamp) / 60000)
+      : null;
+  const nextDue = !next
+    ? ''
+    : /^([01]\d|2[0-3]):[0-5]\d$/.test(next.actualPickup)
+      ? 'in progress'
+      : nextMinutes === null
+        ? ''
+        : nextMinutes > 0
+          ? `${nextMinutes}m`
+          : nextMinutes === 0
+            ? 'now'
+            : 'due';
   return (
     <header className="console-station no-print">
-      <div className="station-identity">
-        <strong>
-          {station || '—'} <span>/</span> TOW CONTROL
-        </strong>
-        <small>{day}</small>
-      </div>
       <div className="header-metrics">
         <span>
           <b>{turns}</b> turns
@@ -232,19 +264,37 @@ export function StationHeader({
       </div>
       <div className="header-search-slot">{search}</div>
       <div className="station-clocks">
-        <div>
-          <small>{zone ? 'LOCAL' : 'ZONE UNKNOWN'}</small>
-          <strong>{now && zone ? time(now, zone) : '—'}</strong>
+        <div className="station-clock-stack">
+          <div>
+            <small>{zone ? 'LOCAL' : 'ZONE UNKNOWN'}</small>
+            <strong>{now && zone ? time(now, zone) : '—'}</strong>
+          </div>
+          <div>
+            <small>UTC</small>
+            <strong>{now ? time(now, 'UTC') : '—'}</strong>
+          </div>
         </div>
-        <div>
-          <small>UTC</small>
-          <strong>{now ? time(now, 'UTC') : '—'}</strong>
-        </div>
+        {next && (
+          <button
+            type="button"
+            className="next-pickup"
+            onClick={() => onNextPickup?.(next.fin)}
+            aria-label={`Next pickup FIN ${next.fin} at ${next.pickup} from ${next.from} to ${next.to}`}
+          >
+            <small>NEXT</small>
+            <strong>
+              {next.pickup} · {next.fin} · {next.from || '?'} → {next.to || '?'}
+              {nextDue ? ` · ${nextDue}` : ''}
+            </strong>
+          </button>
+        )}
       </div>
       <Button
         variant="outline"
+        size="icon"
         className="source-files-button"
         onClick={onFiles}
+        aria-label="Source files"
         title={
           uploadedAt
             ? `Schedule loaded ${new Date(uploadedAt).toLocaleString()}`
@@ -252,7 +302,6 @@ export function StationHeader({
         }
       >
         <Files />
-        <span>Source files</span>
         <span
           className={`source-indicator ${dateMismatch ? 'warning' : uploadedAt && airportLoaded ? 'verified' : ''}`}
           aria-label={
@@ -264,49 +313,11 @@ export function StationHeader({
           }
         />
       </Button>
-      <ThemeToggle />
+      <div className="header-tools">
+        <ThemeToggle />
+        {now !== null && <ToastInbox now={now} />}
+      </div>
     </header>
-  );
-}
-function ThemeToggle() {
-  const [dark, setDark] = useState(false);
-  useEffect(() => {
-    const apply = () => {
-      let saved: string | null = null;
-      try {
-        saved = localStorage.getItem('jazztow-theme');
-      } catch {
-        /* Theme still works when storage is unavailable. */
-      }
-      const enabled = saved ? saved === 'dark' : true;
-      setDark(enabled);
-      document.documentElement.classList.toggle('dark', enabled);
-    };
-    const timer = setTimeout(apply, 0);
-    return () => clearTimeout(timer);
-  }, []);
-  function toggle() {
-    const enabled = !dark;
-    setDark(enabled);
-    document.documentElement.classList.toggle('dark', enabled);
-    try {
-      localStorage.setItem('jazztow-theme', enabled ? 'dark' : 'light');
-    } catch {
-      /* Preference cannot be persisted. */
-    }
-  }
-  return (
-    <Button
-      type="button"
-      variant="outline"
-      size="icon"
-      className="theme-toggle"
-      onClick={toggle}
-      aria-label={dark ? 'Use light mode' : 'Use dark mode'}
-      title={dark ? 'Use light mode' : 'Use dark mode'}
-    >
-      {dark ? <Sun /> : <Moon />}
-    </Button>
   );
 }
 export function AircraftDrawer({

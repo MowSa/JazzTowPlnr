@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { flightKey,comparisonGate,parseAirportSheets,readAirportWorkbook,compareGates,clipOccupancy,occupancyConflicts,occupancyFlights,occupancyRowGate,formatOccupancyDuration,sortGates,applyOccupancyPickups,type AirportPlan } from '../lib/gates.ts';
-import { analyze,makeMoves,longMoves,exportCSV,parseCSV,type Report } from '../lib/tows.ts';
+import { flightKey,comparisonGate,parseAirportSheets,readAirportWorkbook,compareGates,clipOccupancy,occupancyConflicts,occupancyConflictIds,occupancyFlights,occupancyRowGate,formatOccupancyDuration,sortGates,applyOccupancyPickups,type AirportPlan } from '../lib/gates.ts';
+import { analyze,makeMoves,longMoves,exportCSV,parseCSV,moveErrors,type Report } from '../lib/tows.ts';
 import { sampleCSV } from './fixtures/sample.ts';
 const header=['Arr Flight','Arr Time','ETA',null,'Arr Sector','Dep Flight','Dep Time','ETD','Dep Sector','Gate'];
 const report=analyze(sampleCSV);
@@ -152,4 +152,28 @@ test('holding return tows follow dest-gate occupancy; outbound arrival tows do n
  assert.equal(timed[0].pickup,'08:00');
  assert.equal(timed[1].pickup,'13:10');
  assert.equal(timed[1].gateOpen,'13:15');
+});
+test('occupant departing after planned departure is warned instead of silently clamped',()=>{
+ const r=analyze(turnCsv(trow('2200/04 S','1200/05 S','/ 80','/ 80','14:00')));
+ const ms=makeMoves(r);
+ assert.equal(ms[0].kind,'bse-out');
+ const plan=make([['AAL9', new Date('2026-09-05T11:00:00Z'), null, null, 'T', 'AAL10', new Date('2026-09-05T12:30:00Z'), null, 'T', '80']]);
+ const timed=applyOccupancyPickups(ms,r,plan.occupancies)[0];
+ assert.equal(timed.pickup,'12:20');
+ assert.equal(timed.gateOpen,'12:25');
+ assert.ok(timed.warnings.some(w=>/cannot support this departure/i.test(w)));
+ assert.ok(moveErrors(timed,r.date).some(e=>/before departure/i.test(e)));
+});
+test('overlap membership ignores airline filters and different gates',()=>{
+ const a=row('81');
+ const b=['AAL4550', new Date('2026-09-05T19:00:00Z'), null, null, 'T', 'AAL4550', new Date('2026-09-05T20:00:00Z'), null, 'T', '81'];
+ const otherGate=['UAL1', new Date('2026-09-05T19:00:00Z'), null, null, 'T', 'UAL2', new Date('2026-09-05T20:00:00Z'), null, 'T', '82'];
+ const plan=make([a,b,otherGate]);
+ const all=occupancyConflictIds(plan.occupancies,'2026-09-05');
+ assert.equal(all.size,2);
+ assert.ok([...all].every(id=>id.startsWith('Airport:')));
+ const acOnly=plan.occupancies.filter(o=>o.airline==='AC');
+ assert.equal(occupancyConflicts(acOnly,'2026-09-05').size,0);
+ assert.ok(acOnly.some(o=>all.has(o.id)));
+ assert.ok(!all.has(plan.occupancies.find(o=>o.gate==='82')!.id));
 });
