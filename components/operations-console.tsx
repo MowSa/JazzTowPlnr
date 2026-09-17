@@ -1,6 +1,5 @@
 'use client';
 import { useEffect, useState, type ReactNode } from 'react';
-import Link from 'next/link';
 import {
   Plane,
   LayoutList,
@@ -165,12 +164,12 @@ export function ConsoleNav({
         </nav>
       </SidebarContent>
       <SidebarFooter>
-        <Link className="yul-live-link" href="/yul">
+        <a className="yul-live-link" href="/yul">
           <span className="yul-live-dot" aria-hidden="true">
             <i />
           </span>
           Live Map
-        </Link>
+        </a>
         <Button variant="ghost" className="yul-preview-toast-link" onClick={previewArrivalToast}>
           Preview toast
         </Button>

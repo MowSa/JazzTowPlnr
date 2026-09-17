@@ -1,10 +1,9 @@
 'use client';
 
-import Link from 'next/link';
 import { ArrowLeft, LayoutList, Map } from 'lucide-react';
 import { previewArrivalToast } from './arrival-toasts';
 import type { FlightFilters } from '@/lib/yul-ops/types';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import {
   Field,
   FieldDescription,
@@ -14,15 +13,10 @@ import {
 } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
+import { cn } from '@/lib/utils';
 
 const EMPTY_FILTERS: FlightFilters = {
   direction: 'ALL',
@@ -47,25 +41,26 @@ export function FiltersForm({
   return (
     <FieldGroup className="gap-3">
       <Field>
-        <FieldLabel>Aircraft type</FieldLabel>
-        <Select
+        <FieldLabel htmlFor="yul-filter-type">Aircraft type</FieldLabel>
+        <NativeSelect
+          id="yul-filter-type"
+          className="w-full"
           value={filters.aircraftType || 'all'}
-          onValueChange={(value) =>
-            onFilters({ ...filters, aircraftType: value === 'all' ? '' : String(value) })
+          aria-label="Aircraft type"
+          onChange={(event) =>
+            onFilters({
+              ...filters,
+              aircraftType: event.target.value === 'all' ? '' : event.target.value,
+            })
           }
         >
-          <SelectTrigger className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All types</SelectItem>
-            {types.map((type) => (
-              <SelectItem key={type} value={type}>
-                {type}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          <NativeSelectOption value="all">All types</NativeSelectOption>
+          {types.map((type) => (
+            <NativeSelectOption key={type} value={type}>
+              {type}
+            </NativeSelectOption>
+          ))}
+        </NativeSelect>
       </Field>
       <Field>
         <FieldLabel htmlFor="yul-filter-airport">Origin / destination</FieldLabel>
@@ -148,20 +143,20 @@ export function SettingsPopover({
       <Separator />
       <div className="grid gap-1">
         {page === 'map' ? (
-          <Button variant="ghost" className="justify-start" nativeButton={false} render={<Link href="/yul/fleet" />}>
+          <a href="/yul/fleet" className={cn(buttonVariants({ variant: 'ghost' }), 'justify-start')}>
             <LayoutList />
             Fleet board
-          </Button>
+          </a>
         ) : (
-          <Button variant="ghost" className="justify-start" nativeButton={false} render={<Link href="/yul" />}>
+          <a href="/yul" className={cn(buttonVariants({ variant: 'ghost' }), 'justify-start')}>
             <Map />
             Live map
-          </Button>
+          </a>
         )}
-        <Button variant="ghost" className="justify-start" nativeButton={false} render={<Link href="/" />}>
+        <a href="/" className={cn(buttonVariants({ variant: 'ghost' }), 'justify-start')}>
           <ArrowLeft />
           JazzTow operations console
-        </Button>
+        </a>
       </div>
       {demo && (
         <Button type="button" variant="outline" onClick={previewArrivalToast}>

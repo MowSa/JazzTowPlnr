@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { type ReactNode, useEffect, useRef } from 'react';
 import { MoreHorizontal, Search } from 'lucide-react';
 import { ThemeToggle } from '@/components/theme-toggle';
@@ -55,13 +54,13 @@ export function AppHeader({
   return (
     <header className="yul-header yul-glass">
       <div className="yul-header-left">
-        <Link href="/yul" className="yul-brand" aria-label="Jazz at YUL live map">
+        <a href="/yul" className="yul-brand" aria-label="Jazz at YUL live map">
           <MapleMark />
           <span className="yul-brand-text">
             <strong>Jazz @ YUL</strong>
             <span>Montréal–Trudeau</span>
           </span>
-        </Link>
+        </a>
         {statusPill}
       </div>
       {summary}

@@ -1038,7 +1038,11 @@ export const CesiumGlobe = forwardRef<
             map.entities.remove(pair.arc);
             entities.current.delete(id);
           }
-          if (followRef.current && selectedRef.current) {
+          if (
+            followRef.current &&
+            selectedRef.current &&
+            map.scene.mode !== Cesium.SceneMode.MORPHING
+          ) {
             const track = tracks.current.get(selectedRef.current);
             if (track?.pose) {
               followAircraft(
