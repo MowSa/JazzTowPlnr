@@ -16,7 +16,7 @@ import {
   type AircraftTrack,
 } from '@/lib/yul-ops/interpolate';
 import type { FeedFreshnessContext } from '@/lib/yul-ops/freshness';
-import { aircraftVisual } from '@/lib/yul-ops/visual';
+import { aircraftSilhouette, type Silhouette } from '@/lib/yul-ops/visual';
 import {
   flightLabel,
   formatAgo,
@@ -68,10 +68,48 @@ async function loadCesium() {
   return import('cesium');
 }
 
+/** Top-down outlines in a 128px canvas centred at 0,0, nose up. */
+function silhouettePaths(kind: Silhouette): Path2D[] {
+  const fuselage = (half: number) =>
+    new Path2D(
+      `M0 -44 C${half} -40 ${half} -32 ${half} -24 L${half} 30 C${half} 36 2 40 0 42 C-2 40 -${half} 36 -${half} 30 L-${half} -24 C-${half} -32 -${half} -40 0 -44Z`,
+    );
+  const mirrored = (d: (x: number) => string) => [new Path2D(d(1)), new Path2D(d(-1))];
+  if (kind === 'turboprop') {
+    // Dash 8: straight high wing, wing nacelles with prop discs, T-tail.
+    return [
+      fuselage(4.6),
+      new Path2D('M-46 -3 L46 -3 L46 2 L5 9 L-5 9 L-46 2Z'),
+      new Path2D('M-17 33 L17 33 L17 37 L-17 37Z'),
+      ...mirrored((s) => `M${s * 12} -14 L${s * 18} -14 L${s * 18} 12 L${s * 12} 12Z`),
+      ...mirrored((s) => `M${s * 5} -16 L${s * 25} -16 L${s * 25} -14.5 L${s * 5} -14.5Z`),
+    ];
+  }
+  if (kind === 'rear-jet') {
+    // CRJ: swept low wing, engines on the rear fuselage, swept T-tail.
+    return [
+      fuselage(4.6),
+      ...mirrored((s) => `M${s * 4} -4 L${s * 40} 14 L${s * 41} 19 L${s * 4} 11Z`),
+      ...mirrored((s) => `M${s * 3} 31 L${s * 16} 37 L${s * 16} 40 L${s * 3} 37Z`),
+      ...mirrored((s) => `M${s * 6} 13 L${s * 12.5} 13 L${s * 12.5} 27 L${s * 6} 27Z`),
+    ];
+  }
+  const base = [
+    fuselage(kind === 'jet' ? 5.4 : 6.4),
+    ...mirrored((s) => `M${s * 5} -6 L${s * 42} 14 L${s * 42} 19 L${s * 5} 10Z`),
+    ...mirrored((s) => `M${s * 4} 28 L${s * 16} 36 L${s * 16} 39 L${s * 4} 35Z`),
+  ];
+  if (kind === 'jet') {
+    // Wing-mounted engines ahead of the leading edge.
+    base.push(...mirrored((s) => `M${s * 12} -6 L${s * 18} -6 L${s * 18} 8 L${s * 12} 8Z`));
+  }
+  return base;
+}
+
 const iconCache = new Map<string, HTMLCanvasElement>();
 
-function aircraftIcon(fill: string, selected: boolean) {
-  const key = `${fill}:${selected}`;
+function aircraftIcon(fill: string, selected: boolean, kind: Silhouette) {
+  const key = `${fill}:${selected}:${kind}`;
   const cached = iconCache.get(key);
   if (cached) return cached;
   const canvas = document.createElement('canvas');
@@ -80,39 +118,20 @@ function aircraftIcon(fill: string, selected: boolean) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return canvas;
   ctx.translate(64, 64);
+  const paths = silhouettePaths(kind);
+  // Stroke every part at double width, then fill on top: overlapping parts
+  // merge into one outline without inner seams.
   if (selected) {
     ctx.shadowColor = 'rgba(255,255,255,0.7)';
     ctx.shadowBlur = 16;
   }
-  ctx.fillStyle = selected ? '#ffffff' : fill;
   ctx.strokeStyle = selected ? 'rgba(255,255,255,0.95)' : 'rgba(6,10,18,0.55)';
-  ctx.lineWidth = 1.8;
+  ctx.lineWidth = 3.6;
   ctx.lineJoin = 'round';
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(0, -42);
-  ctx.bezierCurveTo(5, -36, 6.2, -22, 6.4, -10);
-  ctx.lineTo(7.2, 2);
-  ctx.lineTo(40, 16);
-  ctx.quadraticCurveTo(44, 18.5, 42, 22);
-  ctx.lineTo(7.4, 14);
-  ctx.lineTo(6.6, 24);
-  ctx.lineTo(16, 36);
-  ctx.quadraticCurveTo(18, 39, 15, 40);
-  ctx.lineTo(0, 32);
-  ctx.lineTo(-15, 40);
-  ctx.quadraticCurveTo(-18, 39, -16, 36);
-  ctx.lineTo(-6.6, 24);
-  ctx.lineTo(-7.4, 14);
-  ctx.lineTo(-42, 22);
-  ctx.quadraticCurveTo(-44, 18.5, -40, 16);
-  ctx.lineTo(-7.2, 2);
-  ctx.lineTo(-6.4, -10);
-  ctx.bezierCurveTo(-6.2, -22, -5, -36, 0, -42);
-  ctx.closePath();
-  ctx.fill();
+  for (const path of paths) ctx.stroke(path);
   ctx.shadowBlur = 0;
-  ctx.stroke();
+  ctx.fillStyle = selected ? '#ffffff' : fill;
+  for (const path of paths) ctx.fill(path);
   ctx.fillStyle = selected
     ? 'rgba(255,255,255,0.55)'
     : 'rgba(255,255,255,0.22)';
@@ -445,8 +464,8 @@ function tooltipHtml(aircraft: LiveAircraft, stale = false) {
   if (aircraft.aircraftType) rows.push(['Type', aircraft.aircraftType]);
   const distance = formatKm(aircraft.distanceFromYulKm);
   if (distance) rows.push(['From YUL', distance]);
-  if (aircraft.lastUpdated)
-    rows.push(['Updated', formatAgo(aircraft.lastUpdated)]);
+  const updatedLabel = formatAgo(aircraft.lastUpdated);
+  if (updatedLabel) rows.push(['Updated', updatedLabel]);
   const phase = stale
     ? 'STALE — position frozen'
     : flightPhaseLabel(flightPhase(aircraft));
@@ -838,14 +857,14 @@ export const CesiumGlobe = forwardRef<
                 ? INBOUND
                 : OUTBOUND;
             const color = cssColor(Cesium, fill);
-            const styleKey = `${stale}:${selected}:${track.snapshot.direction}`;
+            const silhouette = aircraftSilhouette(track.snapshot.aircraftType);
+            const styleKey = `${stale}:${selected}:${track.snapshot.direction}:${silhouette}`;
             const arrow =
               (track.snapshot.verticalSpeedFpm ?? 0) >= 0 ? '↑' : '↓';
             const compact = flightLabel(track.snapshot);
             const label =
               `${compact}\n${arrow} ${formatFt(track.snapshot.altitudeFt) || ''}${stale ? STALE_LABEL : ''}`.trim();
             if (!pair) {
-              aircraftVisual(track.snapshot.aircraftType);
               const scratch = new Cesium.Cartesian3();
               cart(
                 Cesium,
@@ -860,7 +879,7 @@ export const CesiumGlobe = forwardRef<
               );
               const scale = new Cesium.ConstantProperty(selected ? 1.28 : 1);
               const image = new Cesium.ConstantProperty(
-                aircraftIcon(fill, selected),
+                aircraftIcon(fill, selected, silhouette),
               );
               const labelText = new Cesium.ConstantProperty(label);
               const labelShow = new Cesium.ConstantProperty(
@@ -981,7 +1000,7 @@ export const CesiumGlobe = forwardRef<
               stale || selected || aircraftRef.current.length <= 10,
             );
             if (pair.styleKey !== styleKey) {
-              pair.image.setValue(aircraftIcon(fill, selected));
+              pair.image.setValue(aircraftIcon(fill, selected, silhouette));
               pair.scale.setValue(selected ? 1.28 : 1);
               pair.labelFont.setValue(
                 selected

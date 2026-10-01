@@ -152,6 +152,8 @@ export function usePlannerSession() {
   useLayoutEffect(() => {
     const snap = loadPlannerSnapshot();
     if (snap && (snap.fileName || snap.report.date || snap.airport)) {
+      // One-time hydration from sessionStorage before paint; not reachable during SSR render.
+      // oxlint-disable-next-line react/react-compiler
       applySnapshot(snap);
       skipSave.current = true;
     }

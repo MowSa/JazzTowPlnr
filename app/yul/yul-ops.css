@@ -161,23 +161,10 @@ body:has(.yul-app) {
   border-radius: 10px;
 }
 
-.yul-brand-text {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.15;
-  white-space: nowrap;
-}
-
-.yul-brand-text strong {
-  font-size: 15px;
-  font-weight: 650;
-  letter-spacing: 0.01em;
-}
-
-.yul-brand-text span {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 500;
+.yul-brand-logo {
+  display: block;
+  height: 32px;
+  width: auto;
 }
 
 .yul-mark {
@@ -950,8 +937,11 @@ body:has(.yul-app) {
 }
 
 @media (max-width: 1180px) {
-  .yul-brand-text span {
-    display: none;
+  .yul-brand-logo {
+    height: 28px;
+    width: 68px;
+    object-fit: cover;
+    object-position: left center;
   }
   .yul-header-summary > div span {
     display: none;
@@ -980,4 +970,143 @@ body:has(.yul-app) {
 /* Fleet page: the top bar stays fixed while the board scrolls. */
 .yul-app.is-fleet .yul-header {
   position: fixed;
+}
+
+/* ---------- Tow plan link ---------- */
+
+.yul-tow {
+  margin: 10px 16px 6px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--panel-2);
+}
+
+.yul-tow header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.yul-tow header span {
+  margin-left: auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.yul-tow .yul-times {
+  margin-top: 8px;
+}
+
+.yul-tow p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.yul-tow-slip {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.yul-tow-chip {
+  display: inline-flex;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.yul-tow-slip.is-late,
+.yul-tow-chip.is-late {
+  color: var(--warn);
+}
+
+.yul-tow-chip.is-late {
+  background: var(--warn-soft);
+}
+
+.yul-tow-slip.is-early,
+.yul-tow-chip.is-early {
+  color: var(--blue);
+}
+
+.yul-tow-chip.is-early {
+  background: var(--blue-soft);
+}
+
+/* ---------- Wall display ---------- */
+
+.yul-app.is-wall .yul-header-right,
+.yul-app.is-wall .yul-map-controls,
+.yul-app.is-wall .yul-view-switch,
+.yul-app.is-wall .yul-follow-pill,
+.yul-app.is-wall .yul-sidebar-toggle,
+.yul-app.is-wall .yul-right-head button,
+.yul-app.is-wall .yul-actions,
+.yul-app.is-wall .yul-tow button {
+  display: none;
+}
+
+.yul-wall-overlay {
+  position: absolute;
+  z-index: 11;
+  top: 12px;
+  right: 28px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  pointer-events: none;
+}
+
+.yul-wall-clock {
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.yul-wall-clock small {
+  margin-left: 10px;
+  color: var(--muted);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.yul-wall-counts {
+  display: grid;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+/* The exit control appears only when someone moves a pointer over the screen. */
+.yul-wall-exit {
+  pointer-events: auto;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.yul-app.is-wall:hover .yul-wall-exit,
+.yul-wall-exit:focus-visible {
+  opacity: 1;
+}
+
+@media (max-width: 900px) {
+  .yul-wall-counts {
+    display: none;
+  }
 }

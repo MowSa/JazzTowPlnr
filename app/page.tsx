@@ -12,11 +12,7 @@ import {
   Download,
   Printer,
   Plus,
-  Settings2,
   ListChecks,
-  Info,
-  Pencil,
-  Search,
   AlertTriangle,
   Check,
   X,
@@ -30,26 +26,9 @@ import {
   TableCell,
 } from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import {
-  Popover,
-  PopoverTrigger,
-  PopoverContent,
-  PopoverTitle,
-  PopoverDescription,
-} from '@/components/ui/popover';
-import { Progress } from '@/components/ui/progress';
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from '@/components/ui/sheet';
 import { compareGates, applyOccupancyPickups } from '@/lib/gates';
 import { GateVerification } from '@/components/gate-verification';
 import { GateOccupancy } from '@/components/gate-occupancy';
@@ -60,11 +39,9 @@ import {
   StationHeader,
   AircraftDrawer,
 } from '@/components/operations-console';
-import { towStatus, statusNames, type BoardFilter } from '@/lib/console';
-import { ReportTimestamp } from '@/components/report-timestamp';
+import { towStatus, type BoardFilter } from '@/lib/console';
 import { AircraftSearch } from '@/components/aircraft-search';
 import { ReviewWorkflow } from '@/components/review-workflow';
-import { TowTimeline } from '@/components/tow-timeline';
 import { OperationsOverview } from '@/components/operations-overview';
 import { buildShutdown } from '@/lib/shutdown';
 import ShutdownPlanner from '@/components/shutdown-planner';
@@ -72,9 +49,6 @@ import {
   makeMoves,
   longMoves,
   moveErrors,
-  timeLabel,
-  sheetHeaders,
-  sheetValues,
   exportCSV,
   planIssues,
   type Turn,
@@ -82,27 +56,10 @@ import {
 } from '@/lib/tows';
 import TowMoveEditor, { commitEditedMove } from '@/components/tow-move-editor';
 import { usePlannerSession } from '@/hooks/use-planner-session';
-
-const kindLabel = {
-  'same-area': 'Same-area',
-  gate: 'Gate change',
-  'bse-in': 'To BSE',
-  'bse-out': 'From BSE',
-  long: 'Long stay',
-  manual: 'Manual',
-  none: 'No tow',
-  incomplete: 'Missing data',
-};
-const shortFlight = (s: string) => s.replace(/^QK\s*/, '');
-const formatDate = (date: string) =>
-  !date
-    ? 'Upload a schedule to set the date'
-    : new Date(date + 'T12:00:00Z').toLocaleDateString('en-GB', {
-        day: '2-digit',
-        month: 'long',
-        year: 'numeric',
-        timeZone: 'UTC',
-      });
+import { SourceFilesSheet } from '@/components/source-files-sheet';
+import { TowMovesTab } from '@/components/tow-moves-tab';
+import { TowSheetTab } from '@/components/tow-sheet-tab';
+import { kindLabel, shortFlight } from '@/components/tow-labels';
 
 export default function Home() {
   const {
@@ -331,12 +288,6 @@ export default function Home() {
     flushSync(() => setTab('sheet'));
     window.print();
   }
-  const flightCell = (flight: string, time: number | null) => (
-    <>
-      <span>{shortFlight(flight) || '—'}</span>
-      <small>{timeLabel(time, report.date)}</small>
-    </>
-  );
   return (
     <SidebarProvider
       className={`operations-shell ${navCollapsed ? 'nav-collapsed' : ''}`}
@@ -441,159 +392,25 @@ export default function Home() {
               </p>
             </div>
           </div>
-          <Sheet open={sourcesOpen} onOpenChange={setSourcesOpen}>
-            <SheetContent className="edit-sheet source-manager">
-              <SheetHeader>
-                <SheetTitle>Source files</SheetTitle>
-                <SheetDescription>
-                  Manage the operating day’s source data. Replacing the schedule
-                  resets working edits.
-                </SheetDescription>
-              </SheetHeader>
-              {error && (
-                <p role="alert" className="message error">
-                  {error}
-                </p>
-              )}
-              <section
-                className={`upload-panel ${dragging ? 'dragging' : ''}`}
-                aria-label="Upload flight schedule"
-              >
-                <div className="source-heading">
-                  <span>
-                    <FileSpreadsheet size={15} /> FLIGHT SCHEDULE
-                  </span>
-                  <Popover>
-                    <PopoverTrigger
-                      className="source-options"
-                      aria-label="Schedule details and upload date"
-                    >
-                      <Settings2 size={16} />
-                    </PopoverTrigger>
-                    <PopoverContent align="end" className="source-popover">
-                      <PopoverTitle>Schedule details</PopoverTitle>
-                      <PopoverDescription>
-                        Uploads are processed in your browser. Edits last for
-                        this session.
-                      </PopoverDescription>
-                      <p className="source-full-name">{fileName}</p>
-                      <p>
-                        {report.turns.length} aircraft turns ·{' '}
-                        {report.cancelled} cancelled entries skipped
-                        {report.duplicates > 0
-                          ? ` · ${report.duplicates} duplicates skipped`
-                          : ''}
-                      </p>
-                      <label htmlFor="upload-date-override">
-                        Upload date override
-                        <Input
-                          id="upload-date-override"
-                          type="date"
-                          value={dateOverride}
-                          onChange={(e) => setDateOverride(e.target.value)}
-                        />
-                      </label>
-                      <p className="muted">
-                        Leave blank to use the date in the CSV.
-                      </p>
-                    </PopoverContent>
-                  </Popover>
-                </div>
-                <div className="source-body">
-                  <div className="file-description">
-                    <strong title={fileName}>
-                      {fileName || 'No schedule uploaded'}
-                    </strong>
-                    <span>
-                      {dragging
-                        ? 'Drop to load this schedule'
-                        : !fileName
-                          ? 'Start with a turn-view CSV'
-                          : report.turns.length + ' aircraft turns loaded'}
-                    </span>
-                  </div>
-                  <Button
-                    className="button upload-button"
-                    variant="outline"
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      setDragging(true);
-                    }}
-                    onDragLeave={(e) => {
-                      if (
-                        !e.currentTarget.contains(
-                          e.relatedTarget as Node | null,
-                        )
-                      )
-                        setDragging(false);
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      setDragging(false);
-                      if (e.dataTransfer.files[0])
-                        void upload(e.dataTransfer.files[0]);
-                    }}
-                    onClick={() => fileInput.current?.click()}
-                    disabled={loading}
-                  >
-                    <Upload size={16} />
-                    {loading ? 'Reading…' : 'Upload CSV'}
-                  </Button>
-                </div>
-              </section>
-              <section className="source-airport">
-                <h3>AIRPORT PLAN</h3>
-                <strong>{airport?.name || 'No airport workbook loaded'}</strong>
-                <p>
-                  {airport
-                    ? `${airport.assignments.length} assignments · ${airport.date || 'Report date unavailable'}`
-                    : 'Upload the daily airport planning workbook to verify gates or view occupancy.'}
-                </p>
-                <Button
-                  variant="outline"
-                  className="button"
-                  disabled={airportLoading}
-                  onClick={() => airportInput.current?.click()}
-                >
-                  {airportLoading
-                    ? 'Reading workbook…'
-                    : airport
-                      ? 'Replace airport plan'
-                      : 'Upload airport plan'}
-                </Button>
-                {airportError && (
-                  <p role="alert" className="warning-text">
-                    {airportError}
-                  </p>
-                )}
-              </section>
-              {airport?.date && airport.date !== report.date && (
-                <div className="source-date-warning">
-                  <AlertTriangle size={18} />
-                  <div>
-                    <strong>Source dates differ</strong>
-                    <p>
-                      Turn schedule: {report.date}
-                      <br />
-                      Airport plan: {airport.date}
-                    </p>
-                  </div>
-                </div>
-              )}
-              <p className="source-session-note">
-                The working plan stays in this browser tab across refresh. Use
-                Clear desk to start empty. Download reports before closing.
-              </p>
-              <Button
-                variant="outline"
-                className="button source-clear-desk"
-                onClick={clearDesk}
-                disabled={!fileName && !airport}
-              >
-                Clear desk
-              </Button>
-            </SheetContent>
-          </Sheet>
+          <SourceFilesSheet
+            sourcesOpen={sourcesOpen}
+            setSourcesOpen={setSourcesOpen}
+            error={error}
+            dragging={dragging}
+            setDragging={setDragging}
+            fileName={fileName}
+            report={report}
+            dateOverride={dateOverride}
+            setDateOverride={setDateOverride}
+            loading={loading}
+            upload={upload}
+            fileInput={fileInput}
+            airport={airport}
+            airportLoading={airportLoading}
+            airportError={airportError}
+            airportInput={airportInput}
+            clearDesk={clearDesk}
+          />
           <input
             ref={fileInput}
             hidden
@@ -840,285 +657,29 @@ export default function Home() {
                   />
                 </TabsContent>
                 <TabsContent value="moves" className="no-print gantt-view">
-                  <section className="panel">
-                    <div className="panel-heading">
-                      <div>
-                        <h2>
-                          {boardFilter === 'all'
-                            ? 'Aircraft movements'
-                            : statusNames[boardFilter]}{' '}
-                          <span className="table-count">{filtered.length}</span>
-                        </h2>
-                        <p className="section-subtitle">
-                          {selected.length} included on sheet ·{' '}
-                          {selected.length - unreviewed.length} reviewed
-                        </p>
-                      </div>
-                      <div className="tow-view-controls">
-                        <Tabs
-                          value={towView}
-                          onValueChange={(v) => setTowView(String(v))}
-                        >
-                          <TabsList aria-label="Tow plan view">
-                            <TabsTrigger value="timeline">Timeline</TabsTrigger>
-                            <TabsTrigger value="table">Table</TabsTrigger>
-                          </TabsList>
-                        </Tabs>
-                        <label className="sort-control">
-                          Sort
-                          <select
-                            value={towSort}
-                            onChange={(e) => setTowSort(e.target.value)}
-                          >
-                            <option value="pickup">Pickup time</option>
-                            <option value="fin">FIN</option>
-                          </select>
-                        </label>
-                        <div className="search-box">
-                          <Search size={16} />
-                          <Input
-                            aria-label="Search tow moves"
-                            placeholder="Find aircraft, flight or gate"
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                    {unreviewed.length > 0 && (
-                      <div className="inline-note">
-                        <Info size={16} />
-                        <span>
-                          Review each move before issuing. BSE locations are
-                          inferred from overnight turns.
-                        </span>
-                      </div>
-                    )}
-                    {towView === 'timeline' ? (
-                      <TowTimeline
-                        report={report}
-                        moves={filtered}
-                        pending={
-                          boardFilter === 'all' || boardFilter === 'review'
-                            ? [...pendingArea, ...pendingLong].filter((t) =>
-                                `${t.fin} ${t.arrFlight} ${t.depFlight} ${t.from} ${t.to}`
-                                  .toLowerCase()
-                                  .includes(search.toLowerCase()),
-                              )
-                            : []
-                        }
-                        selectedFin={selectedFin}
-                        onFin={setSelectedFin}
-                        onMove={(m) => {
-                          setEditing({ ...m });
-                          setEditError('');
-                        }}
-                        onReview={() => go('review')}
-                      />
-                    ) : (
-                      <>
-                        {' '}
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              {[
-                                'USE',
-                                'FIN #',
-                                'ARRIVAL',
-                                'TOW ROUTE',
-                                'SKED PICKUP',
-                                'GATE OPENS',
-                                'DEPARTURE',
-                                'GROUND',
-                                'STATUS',
-                                'REASON',
-                                'REVIEW',
-                              ].map((h) => (
-                                <TableHead key={h}>{h}</TableHead>
-                              ))}
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {filtered.map((m) => {
-                              const turn = report.turns.find(
-                                (t) => t.id === m.turnId,
-                              );
-                              const errs = moveErrors(m, report.date);
-                              return (
-                                <TableRow
-                                  key={m.id}
-                                  className={!m.included ? 'excluded' : ''}
-                                >
-                                  <TableCell>
-                                    <Checkbox
-                                      aria-label={`Include FIN ${m.fin} ${m.from} to ${m.to}`}
-                                      checked={m.included}
-                                      onCheckedChange={(v) =>
-                                        patch(m.id, { included: !!v })
-                                      }
-                                    />
-                                  </TableCell>
-                                  <TableCell className="fin">
-                                    <Button
-                                      variant="link"
-                                      className="fin-link"
-                                      onClick={() => setSelectedFin(m.fin)}
-                                    >
-                                      {m.fin || '—'}
-                                    </Button>
-                                  </TableCell>
-                                  <TableCell className="flight-cell">
-                                    {flightCell(
-                                      m.arrFlight,
-                                      m.arrFlight
-                                        ? (turn?.arrival ?? null)
-                                        : null,
-                                    )}
-                                  </TableCell>
-                                  <TableCell>
-                                    <div className="tow-route">
-                                      <span
-                                        className={
-                                          m.from === 'BSE' ? 'gate bse' : 'gate'
-                                        }
-                                      >
-                                        {m.from || '?'}
-                                      </span>
-                                      <ArrowRight size={15} />
-                                      <span
-                                        className={
-                                          m.to === 'BSE' ? 'gate bse' : 'gate'
-                                        }
-                                      >
-                                        {m.to || '?'}
-                                      </span>
-                                    </div>
-                                  </TableCell>
-                                  <TableCell>
-                                    <Button
-                                      variant="ghost"
-                                      className="pickup-edit"
-                                      onClick={() => {
-                                        setEditing({ ...m });
-                                        setEditError('');
-                                      }}
-                                      aria-label={`Edit FIN ${m.fin} pickup ${m.pickup || 'unset'}`}
-                                    >
-                                      {m.pickup || 'Set time'}
-                                      <Pencil size={12} />
-                                    </Button>
-                                  </TableCell>
-                                  <TableCell className="mono">
-                                    {m.gateOpen || '—'}
-                                  </TableCell>
-                                  <TableCell className="flight-cell">
-                                    <span>
-                                      {shortFlight(m.depFlight) || '—'}
-                                    </span>
-                                    <small>
-                                      {m.depTime || 'No departure today'}
-                                    </small>
-                                  </TableCell>
-                                  <TableCell className="mono">
-                                    {turn?.duration !== null &&
-                                    turn?.duration !== undefined
-                                      ? `${Math.floor(turn.duration / 60)}h ${turn.duration % 60}m`
-                                      : '—'}
-                                  </TableCell>
-                                  <TableCell>
-                                    <Badge
-                                      variant="outline"
-                                      className={`execution-status execution-${towStatus(m, report.date)}`}
-                                    >
-                                      {statusNames[towStatus(m, report.date)]}
-                                    </Badge>
-                                  </TableCell>
-                                  <TableCell>
-                                    <Badge
-                                      variant="outline"
-                                      className={`reason-badge ${m.kind.startsWith('bse') ? 'blue' : m.kind === 'long' || m.kind === 'same-area' || m.kind === 'incomplete' ? 'amber' : ''}`}
-                                    >
-                                      {kindLabel[m.kind]}
-                                    </Badge>
-                                    {(m.warnings.length > 0 ||
-                                      errs.length > 0) && (
-                                      <span
-                                        className="row-warning"
-                                        title={[...m.warnings, ...errs].join(
-                                          ' ',
-                                        )}
-                                      >
-                                        <AlertTriangle size={13} /> Check
-                                        details
-                                      </span>
-                                    )}
-                                  </TableCell>
-                                  <TableCell>
-                                    <div className="row-actions">
-                                      <Button
-                                        variant="outline"
-                                        className={`review-button ${m.reviewed ? 'done' : ''}`}
-                                        onClick={() => reviewMove(m)}
-                                        aria-label={`${m.reviewed ? 'Undo review' : 'Review'} FIN ${m.fin} ${m.from} to ${m.to}`}
-                                      >
-                                        {m.reviewed ? (
-                                          <Check size={15} />
-                                        ) : (
-                                          <CheckCircle2 size={15} />
-                                        )}{' '}
-                                        {m.reviewed ? 'Reviewed' : 'Review'}
-                                      </Button>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon-sm"
-                                        className="icon-button"
-                                        aria-label={`Edit FIN ${m.fin} ${m.from} to ${m.to}`}
-                                        onClick={() => {
-                                          setEditing({ ...m });
-                                          setEditError('');
-                                        }}
-                                      >
-                                        <Pencil size={15} />
-                                      </Button>
-                                    </div>
-                                  </TableCell>
-                                </TableRow>
-                              );
-                            })}
-                          </TableBody>
-                        </Table>
-                        {!filtered.length && (
-                          <div className="empty-state">
-                            {moves.length
-                              ? 'No moves match this status and search.'
-                              : 'No tow moves identified for this schedule.'}
-                          </div>
-                        )}
-                      </>
-                    )}
-                    <div className="panel-footer">
-                      <div className="review-progress">
-                        <CheckCircle2 size={16} />
-                        <span>
-                          {selected.length - unreviewed.length} of{' '}
-                          {selected.length} moves reviewed
-                        </span>
-                        <Progress
-                          aria-label="Included moves reviewed"
-                          value={
-                            selected.length
-                              ? Math.round(
-                                  ((selected.length - unreviewed.length) /
-                                    selected.length) *
-                                    100,
-                                )
-                              : 0
-                          }
-                        />
-                      </div>
-                      <span>All times local · HH:MM</span>
-                    </div>
-                  </section>
+                  <TowMovesTab
+                    report={report}
+                    moves={moves}
+                    filtered={filtered}
+                    selected={selected}
+                    unreviewed={unreviewed}
+                    pendingArea={pendingArea}
+                    pendingLong={pendingLong}
+                    boardFilter={boardFilter}
+                    search={search}
+                    setSearch={setSearch}
+                    towView={towView}
+                    setTowView={setTowView}
+                    towSort={towSort}
+                    setTowSort={setTowSort}
+                    selectedFin={selectedFin}
+                    setSelectedFin={setSelectedFin}
+                    setEditing={setEditing}
+                    setEditError={setEditError}
+                    patch={patch}
+                    reviewMove={reviewMove}
+                    go={go}
+                  />
                 </TabsContent>
                 <TabsContent value="review" className="no-print">
                   <ReviewWorkflow
@@ -1230,113 +791,19 @@ export default function Home() {
                   </section>
                 </TabsContent>
                 <TabsContent value="sheet" keepMounted className="sheet-tab">
-                  <div className="output-readiness no-print">
-                    <div>
-                      <strong
-                        className={draft ? 'text-warning' : 'text-success'}
-                      >
-                        {draft
-                          ? 'Draft preview — review required'
-                          : 'Tow sheet ready for output'}
-                      </strong>
-                      <p>
-                        {draft
-                          ? `${reviewCount} review items remain. Draft export and printing are available for planning.`
-                          : 'All included movements satisfy the existing tow review checks.'}
-                      </p>
-                    </div>
-                    <Button variant="outline" onClick={() => go('review')}>
-                      {draft
-                        ? 'Resolve remaining items'
-                        : 'View review summary'}
-                      <ArrowRight size={14} />
-                    </Button>
-                  </div>
-                  <section className="paper">
-                    <div className="paper-heading">
-                      <div className="paper-title">TOW SHEET</div>
-                      <div className="paper-brand">
-                        JazzTow{' '}
-                        <small>{report.station} · GROUND OPERATIONS</small>
-                      </div>
-                      <div className="paper-date">
-                        <span>DATE</span>
-                        <strong>{formatDate(report.date).toUpperCase()}</strong>
-                      </div>
-                    </div>
-                    <div
-                      className={`sheet-status ${draft ? 'draft' : 'ready'}`}
-                    >
-                      {draft ? 'DRAFT — REVIEW REQUIRED' : 'REVIEWED TOW SHEET'}
-                      <span>
-                        {draft
-                          ? `${unreviewed.length} moves to review · ${pendingLong.length + pendingArea.length} routing decisions pending${unresolved.length ? ` · ${unresolved.length} incomplete turns` : ''}${report.warnings.length ? ` · ${report.warnings.length} import issues` : ''}${issues.length ? ` · ${issues.length} paired-tow issues` : ''}`
-                          : `${selected.length} moves · All times local`}
-                      </span>
-                    </div>
-                    <Table className="tower-table">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>#</TableHead>
-                          {sheetHeaders.map((h) => (
-                            <TableHead key={h}>{h}</TableHead>
-                          ))}
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {selected.map((m, i) => (
-                          <TableRow key={m.id}>
-                            <TableCell>{i + 1}</TableCell>
-                            {sheetValues(m).map((v, j) => (
-                              <TableCell key={j}>{v}</TableCell>
-                            ))}
-                          </TableRow>
-                        ))}
-                        {Array.from(
-                          { length: Math.max(2, 10 - selected.length) },
-                          (_, i) => (
-                            <TableRow key={`blank-${i}`}>
-                              <TableCell>{selected.length + i + 1}</TableCell>
-                              {sheetHeaders.map((_, j) => (
-                                <TableCell key={j}>&nbsp;</TableCell>
-                              ))}
-                            </TableRow>
-                          ),
-                        )}
-                      </TableBody>
-                    </Table>
-                    {Object.entries(aircraftNotes).some(
-                      ([fin, note]) =>
-                        note.trim() && selected.some((m) => m.fin === fin),
-                    ) && (
-                      <section className="paper-notes">
-                        <h3>OPERATIONAL NOTES</h3>
-                        {Object.entries(aircraftNotes)
-                          .filter(
-                            ([fin, note]) =>
-                              note.trim() &&
-                              selected.some((m) => m.fin === fin),
-                          )
-                          .map(([fin, note]) => (
-                            <p key={fin}>
-                              <strong>FIN {fin}</strong> {note}
-                            </p>
-                          ))}
-                      </section>
-                    )}
-                    <div className="paper-footer">
-                      {report.station} · {report.date} · Local time
-                      <ReportTimestamp station={report.station} />
-                      <span>Prepared with JazzTow</span>
-                    </div>
-                  </section>
-                  <p className="sheet-help no-print">
-                    TIME GATE OPENS AT is filled from airport occupancy when a
-                    departure tow is timed off the previous aircraft. Use the
-                    pencil beside a move to edit release, gate-open, actual
-                    pickup/drop, and tower fields. Print to paper or choose
-                    “Save as PDF”.
-                  </p>
+                  <TowSheetTab
+                    report={report}
+                    selected={selected}
+                    unreviewed={unreviewed}
+                    unresolved={unresolved}
+                    pendingArea={pendingArea}
+                    pendingLong={pendingLong}
+                    issues={issues}
+                    draft={draft}
+                    reviewCount={reviewCount}
+                    aircraftNotes={aircraftNotes}
+                    go={go}
+                  />
                 </TabsContent>
                 <TabsContent value="mismatch" className="no-print">
                   <GateVerification

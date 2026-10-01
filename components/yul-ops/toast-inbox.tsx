@@ -13,7 +13,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 
 const EMPTY: ReturnType<typeof getToastHistory> = [];
 
-export function ToastInbox({ now = Date.now() }: { now?: number }) {
+export function ToastInbox({ now }: { now: number }) {
   const notices = useSyncExternalStore(subscribeToastHistory, getToastHistory, () => EMPTY);
   return (
     <Popover>

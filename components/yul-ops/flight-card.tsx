@@ -8,6 +8,8 @@ import type { LiveAircraft } from '@/lib/yul-ops/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import type { TowLink } from '@/lib/yul-ops/tow-link';
+import { TowChip } from './tow-card';
 
 const PHASE_CLASS = {
   arriving: 'is-arriving',
@@ -19,12 +21,14 @@ export function FlightCard({
   aircraft,
   selected,
   stale,
+  tow,
   now,
   onSelect,
 }: {
   aircraft: LiveAircraft;
   selected: boolean;
   stale: boolean;
+  tow?: TowLink;
   now: number;
   onSelect: (id: string) => void;
 }) {
@@ -64,6 +68,7 @@ export function FlightCard({
             </span>
           )}
         </div>
+        {tow && <TowChip link={tow} />}
       </div>
       <Badge variant="outline" title={stale ? 'Stale data — position frozen; arrival notices suppressed' : undefined} className={cn('yul-phase self-center justify-self-end', stale ? 'text-muted-foreground' : PHASE_CLASS[phase])}>
         {stale ? 'Stale' : flightPhaseLabel(phase)}

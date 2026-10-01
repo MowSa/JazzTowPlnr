@@ -1,6 +1,7 @@
 'use client';
 
-import { ArrowLeft, LayoutList, Map } from 'lucide-react';
+import { ArrowLeft, LayoutList, Map, Tv } from 'lucide-react';
+import { setWallMode } from './wall-mode';
 import { previewArrivalToast } from './arrival-toasts';
 import type { FlightFilters } from '@/lib/yul-ops/types';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -152,6 +153,12 @@ export function SettingsPopover({
             <Map />
             Live map
           </a>
+        )}
+        {page === 'map' && (
+          <Button type="button" variant="ghost" className="justify-start" onClick={() => setWallMode(true)}>
+            <Tv />
+            Wall display
+          </Button>
         )}
         <a href="/" className={cn(buttonVariants({ variant: 'ghost' }), 'justify-start')}>
           <ArrowLeft />

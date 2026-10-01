@@ -24,6 +24,7 @@ export function createLiveFlightsPoller(deps: PollerDependencies) {
   let timer: unknown = null;
   let controller: AbortController | null = null;
   let nextPollAt = 0;
+  let paused = false;
   const listeners = new Set<() => void>();
 
   const isActive = (epoch: number) => generation === epoch && listeners.size > 0;
@@ -90,6 +91,19 @@ export function createLiveFlightsPoller(deps: PollerDependencies) {
     }
   }
 
+  function start() {
+    const epoch = ++generation;
+    schedule(epoch, Math.max(0, nextPollAt - deps.now()));
+  }
+
+  function stop() {
+    ++generation;
+    if (timer !== null) deps.clearTimeout(timer);
+    timer = null;
+    controller?.abort();
+    controller = null;
+  }
+
   return {
     getSnapshot: () => snapshot,
     getNextPollAt: () => nextPollAt,
@@ -98,18 +112,19 @@ export function createLiveFlightsPoller(deps: PollerDependencies) {
       // Each subscription owns a distinct entry, even if callbacks are identical.
       const notify = () => listener();
       listeners.add(notify);
-      if (listeners.size === 1) {
-        const epoch = ++generation;
-        schedule(epoch, Math.max(0, nextPollAt - deps.now()));
-      }
+      if (listeners.size === 1 && !paused) start();
       return () => {
         if (!listeners.delete(notify) || listeners.size > 0) return;
-        ++generation;
-        if (timer !== null) deps.clearTimeout(timer);
-        timer = null;
-        controller?.abort();
-        controller = null;
+        stop();
       };
+    },
+    /** Hidden tabs stop polling (each poll spends FR24 credits); showing the tab catches up at once if overdue. */
+    setPaused: (value: boolean) => {
+      if (value === paused) return;
+      paused = value;
+      if (listeners.size === 0) return;
+      if (paused) stop();
+      else start();
     },
   };
 }

@@ -133,5 +133,19 @@ Source: [FR24 API docs](https://fr24api.flightradar24.com/docs/endpoints/overvie
 
    Default `FR24_REFRESH_INTERVAL=120000` (2 minutes) with server-side caching so extra browser tabs do not multiply FR24 calls. Interpolation keeps the globe moving between snapshots. For a month-long Explorer deployment raise the interval substantially or use Essential/Advanced. One failed FR24 call does not clear the board; the last good snapshot is kept.
 
+### Polling and caching
+
+Browser tabs stop polling while hidden and catch up as soon as they are shown again. Live responses carry `Netlify-CDN-Cache-Control` for the server refresh interval, so separate function instances and browsers share one FR24 snapshot instead of each spending credits. The password wall edge function still runs before the cache. Errors and demo traffic are never cached.
+
+### Tow plan on the map
+
+When a turn-view CSV is loaded in JazzTow, `/yul` (opened in the same tab) reads that working plan. Live inbound flights are matched to arrival-side tow moves by flight number (AC/QK/JZA/ACA are treated as one carrier) and nearest scheduled arrival on the sheet date. The flight list shows the planned pickup. The flight panel compares it with a pickup rounded from the live ETA. **Move pickup to …** re-times the move and returns it to unreviewed, so it must be reviewed on the Tow plan again before the sheet is final. Later arrivals always suggest a new time. Earlier arrivals only do so when the pickup was purely arrival-timed, because gate-occupancy pickups stay put. Started tows are never re-timed.
+
+### Wall display
+
+Use **Wall display** in the map options, or open `/yul?wall` (bookmarkable for an ops-room screen). It goes fullscreen when started from the button, keeps the screen awake where supported, hides interactive controls, shows a large YUL/Zulu clock, and tours the YUL overview and then up to six inbound flights by ETA, 20 seconds each. Esc or **Exit wall display** (shown on pointer hover) leaves it.
+
+Aircraft icons on the globe follow the ICAO type: Dash 8/ATR turboprops, rear-engine regional jets (CRJ), wing-engine jets (E-Jets and mainline), and a generic shape otherwise.
+
 This map is not an official Jazz, Air Canada, or NAV CANADA system. Interpolated positions and locally calculated distances must not be treated as surveillance truth.
 

@@ -51,6 +51,32 @@
     "typescript/no-namespace": "error",
     "typescript/no-require-imports": "error",
     "typescript/no-unnecessary-type-constraint": "error",
-    "typescript/no-unsafe-function-type": "error"
-  }
+    "typescript/no-unsafe-function-type": "error",
+    "nextjs/no-html-link-for-pages": "off",
+    "nextjs/no-img-element": "off"
+  },
+  "overrides": [
+    {
+      "files": [
+        "tests/**"
+      ],
+      "rules": {
+        "typescript/no-floating-promises": "off"
+      }
+    },
+    {
+      "files": [
+        "components/ui/**"
+      ],
+      "rules": {
+        "jsx-a11y/prefer-tag-over-role": "off",
+        "jsx-a11y/click-events-have-key-events": "off",
+        "jsx-a11y/no-noninteractive-element-interactions": "off",
+        "jsx-a11y/label-has-associated-control": "off",
+        "jsx-a11y/anchor-has-content": "off",
+        "typescript/restrict-template-expressions": "off",
+        "react/react-compiler": "off"
+      }
+    }
+  ]
 }

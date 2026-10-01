@@ -12,6 +12,11 @@ const liveFlights = createLiveFlightsPoller({
   clearTimeout: (timer) => window.clearTimeout(timer as number),
 });
 
+if (typeof document !== 'undefined') {
+  liveFlights.setPaused(document.hidden);
+  document.addEventListener('visibilitychange', () => liveFlights.setPaused(document.hidden));
+}
+
 export function useLiveFlights() {
   return useSyncExternalStore(
     liveFlights.subscribe,

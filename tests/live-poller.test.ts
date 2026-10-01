@@ -93,6 +93,52 @@ void test('two consumers share one request, snapshot and timer until the final u
   assert.equal(h.timers.size, 0);
 });
 
+void test('subscription churn fetches once per tick and stops after the last listener leaves', async () => {
+  const h = harness();
+  const listener = () => {};
+
+  for (let cycle = 0; cycle < 3; cycle++) {
+    const firstOff = h.store.subscribe(listener);
+    const secondOff = h.store.subscribe(listener);
+    assert.equal(h.timers.size, 1, 'multiple listeners share one scheduled tick');
+    const before = h.requests.length;
+    h.runNext();
+    assert.equal(h.requests.length, before + 1, 'a tick issues exactly one fetch');
+    assert.equal(h.timers.size, 0, 'an outstanding fetch has no competing poll timer');
+
+    firstOff();
+    firstOff();
+    assert.equal(h.requests.at(-1)!.signal.aborted, false, 'one listener still owns the request');
+    secondOff();
+    assert.equal(h.requests.at(-1)!.signal.aborted, true, 'last unsubscribe aborts the request');
+    assert.equal(h.timers.size, 0);
+
+    // A transport can finish even after abort. It must not restart polling.
+    h.requests.at(-1)!.resolve(response(feed()));
+    await settle();
+    assert.equal(h.requests.length, before + 1);
+    assert.equal(h.timers.size, 0, 'late completion cannot schedule with no listeners');
+    assert.equal(h.store.getSnapshot(), null, 'disposed requests cannot publish');
+  }
+
+  const off = h.store.subscribe(listener);
+  h.runNext();
+  assert.equal(h.requests.length, 4, 'resubscription starts only one fresh request');
+  h.requests.at(-1)!.resolve(response(feed()));
+  await settle();
+  assert.equal(h.timers.size, 1);
+  h.runNext();
+  assert.equal(h.requests.length, 5, 'the next scheduled tick also fetches exactly once');
+  h.requests.at(-1)!.resolve(response(feed()));
+  await settle();
+  assert.equal(h.timers.size, 1);
+  off();
+  assert.equal(h.timers.size, 0, 'last unsubscribe clears an idle scheduled poll');
+  await settle();
+  assert.equal(h.requests.length, 5);
+  assert.equal(h.timers.size, 0);
+});
+
 void test('late fetch resolution after final unsubscribe cannot publish or schedule', async () => {
   const h = harness();
   let updates = 0;
@@ -215,4 +261,15 @@ void test('demo cadence is honored and a remount retains the scheduled refresh d
   assert.equal(h.delay(), 8000);
   assert.equal(h.requests.length, 1, 'remount does not eagerly issue another request');
   remountOff();
+});
+
+void test('a hidden tab pauses polling and resumes on show', () => {
+  const h = harness();
+  const off = h.store.subscribe(() => {});
+  h.store.setPaused(true);
+  assert.equal(h.timers.size, 0, 'paused store has no scheduled poll');
+  h.store.setPaused(false);
+  h.runNext();
+  assert.equal(h.requests.length, 1, 'showing the tab polls straight away');
+  off();
 });

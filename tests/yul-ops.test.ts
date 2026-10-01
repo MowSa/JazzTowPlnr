@@ -7,6 +7,7 @@ import { parseFr24LivePositions, buildLivePositionsUrl } from '../lib/yul-ops/fr
 import { createTrack, applySnapshot, advanceTrack } from '../lib/yul-ops/interpolate.ts';
 import { buildDemoAircraft } from '../lib/yul-ops/demo.ts';
 import { formatClockShort } from '../lib/yul-ops/format.ts';
+import { isAircraftStale } from '../lib/yul-ops/freshness.ts';
 import { YUL } from '../lib/yul-ops/constants.ts';
 import type { Fr24LivePosition } from '../lib/yul-ops/types.ts';
 
@@ -96,6 +97,17 @@ void test('demo mode yields Jazz YUL inbound and outbound aircraft', () => {
   assert.ok(aircraft.some((item) => item.direction === 'OUTBOUND'));
   assert.ok(aircraft.every((item) => item.operatorIcao === 'JZA'));
   assert.ok(aircraft.every((item) => item.origin === 'YUL' || item.destination === 'YUL'));
+});
+
+void test('missing or invalid FR24 timestamps do not become receipt time', () => {
+  const missing = toLiveAircraft({ ...jazzYulInbound, timestamp: null });
+  assert.equal(Number.isFinite(missing?.lastUpdated), false, 'absent timestamp stays unknown, not "now"');
+  const invalid = toLiveAircraft({ ...jazzYulInbound, timestamp: 'not-a-date' });
+  assert.equal(Number.isFinite(invalid?.lastUpdated), false, 'unparseable timestamp stays unknown');
+  const present = toLiveAircraft(jazzYulInbound);
+  assert.equal(present?.lastUpdated, Date.parse('2026-09-15T18:00:00Z'));
+  // Downstream freshness treats unknown source age as stale, not fresh.
+  assert.equal(isAircraftStale({ lastUpdated: NaN }), true);
 });
 
 void test('bearing toward YUL is finite', () => {

@@ -54,6 +54,7 @@ export function formatDuration(ms?: number) {
 }
 
 export function formatAgo(from: number, now = Date.now()) {
+  if (!Number.isFinite(from)) return undefined;
   const seconds = Math.max(0, Math.round((now - from) / 1000));
   if (seconds < 5) return 'just now';
   if (seconds < 60) return `${seconds}s ago`;

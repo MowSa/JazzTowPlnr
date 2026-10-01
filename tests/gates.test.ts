@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { flightKey,comparisonGate,parseAirportSheets,readAirportWorkbook,compareGates,clipOccupancy,occupancyConflicts,occupancyConflictIds,occupancyFlights,occupancyRowGate,formatOccupancyDuration,sortGates,applyOccupancyPickups,type AirportPlan } from '../lib/gates.ts';
+import { flightKey,comparisonGate,parseAirportSheets,readAirportWorkbook,compareGates,clipOccupancy,occupancyConflicts,occupancyConflictIds,occupancyFlights,occupancyRowGate,formatOccupancyDuration,sortGates,applyOccupancyPickups } from '../lib/gates.ts';
 import { analyze,makeMoves,longMoves,exportCSV,parseCSV,moveErrors,type Report } from '../lib/tows.ts';
 import { sampleCSV } from './fixtures/sample.ts';
 const header=['Arr Flight','Arr Time','ETA',null,'Arr Sector','Dep Flight','Dep Time','ETD','Dep Sector','Gate'];

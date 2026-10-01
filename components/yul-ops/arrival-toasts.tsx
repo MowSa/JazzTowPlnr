@@ -17,6 +17,8 @@ const TOAST_MS = 6_000;
 const PREVIEW_ID = '__preview__';
 const PREVIEW_EVENT = 'yul-preview-arrival-toast';
 
+type ShownAlert = ArrivalAlert & { shownAt: number };
+
 function sampleAlert(): ArrivalAlert {
   const etaMs = Date.now() + 19 * 60_000;
   const staMs = etaMs - 12 * 60_000;
@@ -80,11 +82,11 @@ function ToastTimer({
   durationMs: number;
   onDone: () => void;
 }) {
-  const origin = useRef({
+  // Captured once per mount (the key changes with shownAt), so remounts resume mid-animation.
+  const [{ durationMs: duration, elapsed }] = useState(() => ({
     durationMs,
     elapsed: Math.min(durationMs, Math.max(0, Date.now() - shownAt)),
-  });
-  const { durationMs: duration, elapsed } = origin.current;
+  }));
   return (
     <span className="yul-arrival-toast-timer" aria-hidden="true">
       <i
@@ -106,9 +108,8 @@ export function ArrivalToastHost() {
   const shown = useRef<Record<string, number>>({});
   const timers = useRef(new Map<string, number>());
   const previewTimer = useRef<number>(0);
-  const previewShownAt = useRef(0);
-  const [toasts, setToasts] = useState<ArrivalAlert[]>([]);
-  const [preview, setPreview] = useState<ArrivalAlert | null>(null);
+  const [toasts, setToasts] = useState<ShownAlert[]>([]);
+  const [preview, setPreview] = useState<ShownAlert | null>(null);
   const [staRevision, setStaRevision] = useState(0);
 
   useEffect(() => {
@@ -127,8 +128,7 @@ export function ArrivalToastHost() {
         clocks: arrivalAlertClocks(alert),
         shownAt,
       });
-      previewShownAt.current = shownAt;
-      setPreview(alert);
+      setPreview({ ...alert, shownAt });
       window.clearTimeout(previewTimer.current);
       previewTimer.current = window.setTimeout(() => setPreview(null), TOAST_MS);
     };
@@ -149,7 +149,7 @@ export function ArrivalToastHost() {
     if (!feed) return;
     const now = Date.now();
     const next = arrivalAlerts(freshArrivalAircraft(feed, now), now);
-    const visible: ArrivalAlert[] = [];
+    const visible: ShownAlert[] = [];
     let wrote = false;
     const dismiss = (id: string) => {
       timers.current.delete(id);
@@ -160,7 +160,7 @@ export function ArrivalToastHost() {
       if (!shownAt) {
         shown.current[alert.id] = now;
         wrote = true;
-        visible.push(alert);
+        visible.push({ ...alert, shownAt: now });
         recordToastNotice({
           id: alert.id,
           flightLabel: alert.flightLabel,
@@ -170,7 +170,7 @@ export function ArrivalToastHost() {
           shownAt: now,
         });
       } else if (now - shownAt < TOAST_MS) {
-        visible.push(alert);
+        visible.push({ ...alert, shownAt });
       } else {
         continue;
       }
@@ -183,6 +183,8 @@ export function ArrivalToastHost() {
       }
     }
     if (wrote) writeShown(shown.current);
+    // Syncs from the external feed and records notices as a side effect, so it stays in an effect.
+    // oxlint-disable-next-line react/react-compiler
     setToasts(visible);
   }, [feed, staRevision]);
 
@@ -227,9 +229,7 @@ export function ArrivalToastHost() {
     <div className="yul-arrival-toasts" aria-live="polite">
       {visible.map((alert) => {
         const clocks = arrivalAlertClocks(alert);
-        const shownAt = alert.id === PREVIEW_ID
-          ? previewShownAt.current || Date.now()
-          : shown.current[alert.id] || Date.now();
+        const { shownAt } = alert;
         return (
         <Alert key={alert.id} className={`yul-arrival-toast is-${alert.kind}`}>
           <Button

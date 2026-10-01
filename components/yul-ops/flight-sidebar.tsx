@@ -11,6 +11,7 @@ import { Empty, EmptyDescription } from '@/components/ui/empty';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import type { TowLink } from '@/lib/yul-ops/tow-link';
 
 const TAB_TITLE: Record<MainTab, string> = {
   live: 'Live Flights',
@@ -24,6 +25,7 @@ export function FlightSidebar({
   outboundCount,
   flights,
   staleIds,
+  towLinks,
   selectedId,
   now,
   collapsed,
@@ -41,6 +43,7 @@ export function FlightSidebar({
   outboundCount: number;
   flights: LiveAircraft[];
   staleIds: ReadonlySet<string>;
+  towLinks: ReadonlyMap<string, TowLink>;
   selectedId: string | null;
   now: number;
   collapsed: boolean;
@@ -151,6 +154,7 @@ export function FlightSidebar({
               aircraft={item}
               selected={item.id === selectedId}
               stale={staleIds.has(item.id)}
+              tow={towLinks.get(item.id)}
               now={now}
               onSelect={onSelect}
             />

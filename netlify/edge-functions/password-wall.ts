@@ -62,7 +62,8 @@ export default async function passwordWall(request: Request, context: EdgeContex
 
   const url = new URL(request.url);
   if (url.pathname === '/__jazz_auth' && request.method === 'POST') {
-    const submitted = String((await request.formData()).get('password') || '');
+    const field = (await request.formData()).get('password');
+    const submitted = typeof field === 'string' ? field : '';
     if (!(await equalSecret(submitted, password, sessionSecret))) return loginPage(true);
     const timestamp = String(Math.floor(Date.now() / 1000));
     const signature = await hmac(timestamp, sessionSecret);

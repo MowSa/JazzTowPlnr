@@ -578,15 +578,14 @@ export function GateOccupancy({
             <div className="gantt-toolbar">
               <div
                 className="gantt-scale"
-                role="radiogroup"
+                role="toolbar"
                 aria-label="Timeline time span"
               >
                 {TIME_SPANS.map((minutes) => (
                   <button
                     key={minutes}
                     type="button"
-                    role="radio"
-                    aria-checked={timeSpan === minutes}
+                    aria-pressed={timeSpan === minutes}
                     className={timeSpan === minutes ? 'is-active' : ''}
                     onClick={() => changeSpan(minutes)}
                   >
@@ -671,7 +670,7 @@ export function GateOccupancy({
                     ]);
                     const lanes = occupancyLanes(items, day);
                     const laneCount =
-                      Math.max(0, ...[...lanes.values()], 0) +
+                      Math.max(0, ...lanes.values()) +
                       (lanes.size ? 1 : 0);
                     return (
                       <div

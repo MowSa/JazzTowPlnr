@@ -45,7 +45,7 @@ export function toLiveAircraft(position: Fr24LivePosition): LiveAircraft | null 
   const speed = Number(position.gspeed);
   const vertical = Number(position.vspeed);
   const heading = Number(position.track);
-  const updated = position.timestamp ? Date.parse(position.timestamp) : Date.now();
+  const updated = position.timestamp ? Date.parse(position.timestamp) : NaN;
 
   return {
     id: text(position.fr24_id) || `${code(position.callsign) || 'JZA'}-${latitude.toFixed(3)}`,
@@ -73,7 +73,7 @@ export function toLiveAircraft(position: Fr24LivePosition): LiveAircraft | null 
     positionSource: text(position.source),
     distanceFromYulKm: distanceFromYulKm(latitude, longitude),
     direction: inbound ? 'INBOUND' : 'OUTBOUND',
-    lastUpdated: Number.isFinite(updated) ? updated : Date.now(),
+    lastUpdated: Number.isFinite(updated) ? updated : NaN,
   };
 }
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 
 export type PlannerWork = {
   scheduleLoaded: boolean;
@@ -33,14 +33,15 @@ export function prepareReplacement<T>(parse: () => T, confirm: () => boolean): T
 export function usePlannerSessionGuard(work: PlannerWork) {
   const hasWork = hasPlannerWork(work);
   const workRef = useRef(hasWork);
-  workRef.current = hasWork;
+  useLayoutEffect(() => {
+    workRef.current = hasWork;
+  }, [hasWork]);
 
   useEffect(() => {
     if (!hasWork) return;
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
       if (!workRef.current) return;
       event.preventDefault();
-      event.returnValue = '';
     };
     // Full-document links (including /yul) and location.assign both pass
     // through this single native confirmation, avoiding duplicate dialogs.

@@ -174,6 +174,7 @@ export function FleetBoard() {
     <TooltipProvider>
       <div className="yul-app is-fleet">
         <AppHeader
+          now={now}
           query={filters.query}
           hits={searchHits}
           searchOpen={searchOpen}
@@ -302,7 +303,7 @@ export function FleetBoard() {
                           '—'
                         )}
                       </TableCell>
-                      <TableCell>{formatAgo(item.lastUpdated, now)}</TableCell>
+                      <TableCell>{formatAgo(item.lastUpdated, now) ?? '—'}</TableCell>
                       <TableCell>{item.squawk || '—'}</TableCell>
                     </TableRow>
                   );

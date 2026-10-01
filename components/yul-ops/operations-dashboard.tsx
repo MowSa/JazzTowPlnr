@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { PanelLeftOpen } from 'lucide-react';
 import { AppHeader, type MainTab } from './app-header';
 import { FlightSidebar } from './flight-sidebar';
@@ -10,6 +10,8 @@ import { SelectedFlightPanel } from './selected-flight-panel';
 import { OperationsSummary, StatusPill } from './status-pill';
 import { SettingsPopover } from './settings-popover';
 import { useLiveFlights, useNextLivePollAt } from './use-live-flights';
+import { useTowLinks } from './use-tow-plan';
+import { useWallMode, WallOverlay } from './wall-mode';
 import { isAircraftStale, isFeedStale } from '@/lib/yul-ops/freshness';
 import { matchesFilters, sortFlights, type FlightSortKey } from '@/lib/yul-ops/filter';
 import { flightLabel, nextLiveUpdateLabel } from '@/lib/yul-ops/format';
@@ -20,6 +22,8 @@ import { Button } from '@/components/ui/button';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
 const EMPTY_AIRCRAFT: LiveAircraft[] = [];
+const WALL_STOP_MS = 20_000;
+const WALL_MAX_FLIGHTS = 6;
 
 const EMPTY_FILTERS: FlightFilters = {
   direction: 'ALL',
@@ -48,6 +52,7 @@ export function OperationsDashboard() {
   // A manual toggle overrides the width-driven default until the next toggle.
   const narrow = useMediaQuery('(max-width: 1599px)');
   const [railPref, setRailPref] = useState<boolean | null>(null);
+  const wall = useWallMode();
   const leftCollapsed = railPref ?? narrow;
 
   const select = useCallback((id: string | null) => {
@@ -87,6 +92,7 @@ export function OperationsDashboard() {
       ),
     [aircraft, feedStale, feed?.staleAfterMs, now],
   );
+  const towLinks = useTowLinks(aircraft);
   const staleCount = staleIds.size;
   const status = feed?.status === 'ok' && feedStale ? 'delayed' : feed?.status ?? 'error';
   const inboundCount = aircraft.filter((item) => item.direction === 'INBOUND').length;
@@ -114,6 +120,38 @@ export function OperationsDashboard() {
     return () => window.removeEventListener('keydown', onKey);
   }, [selected, select]);
 
+  // Wall tour: YUL overview, then follow each fresh inbound in ETA order, one stop at a time.
+  const tourAircraft = useRef(aircraft);
+  const tourStale = useRef(staleIds);
+  useLayoutEffect(() => {
+    tourAircraft.current = aircraft;
+    tourStale.current = staleIds;
+  }, [aircraft, staleIds]);
+  useEffect(() => {
+    if (!wall) return;
+    let step = 0;
+    const next = () => {
+      const eta = (item: LiveAircraft) => Date.parse(item.eta || '') || Infinity;
+      const inbound = tourAircraft.current
+        .filter((item) => item.direction === 'INBOUND' && !tourStale.current.has(item.id))
+        .sort((a, b) => eta(a) - eta(b))
+        .slice(0, WALL_MAX_FLIGHTS);
+      const stops = [null, ...inbound.map((item) => item.id)];
+      const id = stops[step++ % stops.length];
+      setFilters(EMPTY_FILTERS);
+      setTab('live');
+      select(id);
+      setFollow(Boolean(id));
+      if (!id) globe.current?.flyYul();
+    };
+    const first = window.setTimeout(next, 0);
+    const timer = window.setInterval(next, WALL_STOP_MS);
+    return () => {
+      window.clearTimeout(first);
+      window.clearInterval(timer);
+    };
+  }, [wall, select]);
+
   function changeTab(next: MainTab) {
     setTab(next);
     if (next === 'arrivals') setFilters((current) => ({ ...current, direction: 'INBOUND' }));
@@ -123,7 +161,8 @@ export function OperationsDashboard() {
 
   return (
     <TooltipProvider>
-      <div className="yul-app">
+      <div className={wall ? 'yul-app is-wall' : 'yul-app'}>
+        {wall && <WallOverlay now={now} inbound={inboundCount} outbound={outboundCount} />}
         <div className="yul-map">
           <CesiumGlobe
             ref={globe}
@@ -161,6 +200,7 @@ export function OperationsDashboard() {
         </div>
 
         <AppHeader
+          now={now}
           query={filters.query}
           hits={searchHits}
           searchOpen={searchOpen}
@@ -205,6 +245,7 @@ export function OperationsDashboard() {
           outboundCount={outboundCount}
           flights={visible}
           staleIds={staleIds}
+          towLinks={towLinks}
           selectedId={selected?.id ?? null}
           now={now}
           collapsed={leftCollapsed}
@@ -233,6 +274,7 @@ export function OperationsDashboard() {
 
         <SelectedFlightPanel
           aircraft={selected}
+          tow={selected ? towLinks.get(selected.id) : undefined}
           follow={follow && Boolean(selected)}
           now={now}
           source={`${feed?.mode === 'demo' ? 'Demo feed' : 'Flightradar24'}${selected && (feedStale || isAircraftStale(selected, feed?.staleAfterMs, now)) ? ' · STALE — position frozen' : ''}`}

@@ -24,6 +24,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
+import type { TowLink } from '@/lib/yul-ops/tow-link';
+import { TowPlanCard } from './tow-card';
 
 function Row({ label, value }: { label: string; value?: string }) {
   if (!value) return null;
@@ -51,6 +53,7 @@ function VarianceChip({ aircraft }: { aircraft: LiveAircraft }) {
 
 export function SelectedFlightPanel({
   aircraft,
+  tow,
   follow,
   now,
   source,
@@ -61,6 +64,7 @@ export function SelectedFlightPanel({
   onToggleRoute,
 }: {
   aircraft: LiveAircraft | null;
+  tow?: TowLink;
   follow: boolean;
   now: number;
   source: string;
@@ -163,6 +167,7 @@ export function SelectedFlightPanel({
             )}
           </CardContent>
         </Card>
+        {tow && <TowPlanCard key={tow.move.id} link={tow} />}
         <Separator className="mx-4 my-1" />
         <div className="yul-kv">
           <Row label="Aircraft" value={aircraft.aircraftType} />

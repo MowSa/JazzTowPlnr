@@ -74,7 +74,7 @@ const text = (v: unknown): string => {
       ? text(o.result)
       : o.text || o.richText?.map((x) => x.text).join('') || '';
   }
-  return String(v).trim();
+  return String(v as string | number | boolean | Date).trim();
 };
 function dateTime(v: unknown, date1904 = false): string {
   if (v instanceof Date)
@@ -595,8 +595,8 @@ export async function readAirportWorkbook(
   data: ArrayBuffer,
   name: string,
 ): Promise<AirportPlan> {
-  const module = await import('exceljs');
-  const Workbook = module.default?.Workbook || module.Workbook;
+  const exceljs = await import('exceljs');
+  const Workbook = exceljs.default?.Workbook || exceljs.Workbook;
   const workbook = new Workbook();
   await workbook.xlsx.load(data);
   const sheets: { name: string; rows: unknown[][] }[] = [];

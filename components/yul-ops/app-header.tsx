@@ -15,6 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 export type MainTab = 'live' | 'arrivals' | 'departures';
 
 export function AppHeader({
+  now,
   query,
   hits,
   searchOpen,
@@ -26,6 +27,7 @@ export function AppHeader({
   onSearchFocus,
   onSearchBlur,
 }: {
+  now: number;
   query: string;
   hits: LiveAircraft[];
   searchOpen: boolean;
@@ -56,10 +58,11 @@ export function AppHeader({
       <div className="yul-header-left">
         <a href="/yul" className="yul-brand" aria-label="Jazz at YUL live map">
           <MapleMark />
-          <span className="yul-brand-text">
-            <strong>Jazz @ YUL</strong>
-            <span>Montréal–Trudeau</span>
-          </span>
+          <img
+            src="/yul-ops/yul-logo.png"
+            alt="YUL Montréal–Trudeau International Airport"
+            className="yul-brand-logo"
+          />
         </a>
         {statusPill}
       </div>
@@ -101,7 +104,7 @@ export function AppHeader({
             </div>
           )}
         </div>
-        <ToastInbox />
+        <ToastInbox now={now} />
         <ThemeToggle className="size-10 min-w-10" />
         <Popover>
           <PopoverTrigger
